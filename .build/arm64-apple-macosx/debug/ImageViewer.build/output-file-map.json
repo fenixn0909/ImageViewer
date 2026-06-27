@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/primary.swiftdeps"
+  },
+  "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/Sources/AppDelegate.swift": {
+    "dependencies": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/AppDelegate.d",
+    "object": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/AppDelegate.swift.o",
+    "swiftmodule": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/AppDelegate~partial.swiftmodule",
+    "swift-dependencies": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/AppDelegate.swiftdeps",
+    "diagnostics": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/AppDelegate.dia"
+  },
+  "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/Sources/ContentView.swift": {
+    "dependencies": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/ContentView.d",
+    "object": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/ContentView.swift.o",
+    "swiftmodule": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/ContentView.dia"
+  },
+  "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/Sources/main.swift": {
+    "dependencies": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/main.d",
+    "object": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/main.swift.o",
+    "swiftmodule": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/main.swiftdeps",
+    "diagnostics": "/Users/weiwenting/Working/=Projects/AI App/ImageViewer/.build/arm64-apple-macosx/debug/ImageViewer.build/main.dia"
+  }
+}

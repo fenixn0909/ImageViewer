@@ -1,0 +1,66 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "ImageViewer-arm64-apple-macosx15.0-release.exe": ["<ImageViewer-arm64-apple-macosx15.0-release.exe>"]
+  "ImageViewer-arm64-apple-macosx15.0-release.module": ["<ImageViewer-arm64-apple-macosx15.0-release.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<ImageViewer-arm64-apple-macosx15.0-release.exe>","<ImageViewer-arm64-apple-macosx15.0-release.module>"]
+  "test": ["<ImageViewer-arm64-apple-macosx15.0-release.exe>","<ImageViewer-arm64-apple-macosx15.0-release.module>"]
+default: "main"
+nodes:
+  "/Users/weiwenting/AI Project/ImageViewer/Sources/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/weiwenting/AI Project/ImageViewer/Sources/AppDelegate.swift","/Users/weiwenting/AI Project/ImageViewer/Sources/ContentView.swift","/Users/weiwenting/AI Project/ImageViewer/Sources/main.swift"]
+    outputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/sources"]
+    description: "Write auxiliary file /Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/sources"
+
+  "/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/AppDelegate.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/ContentView.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/main.swift.o"]
+    outputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.product/Objects.LinkFileList"
+
+  "/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Library/Developer/CommandLineTools/usr/bin/swiftc"]
+    outputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+
+  "<ImageViewer-arm64-apple-macosx15.0-release.exe>":
+    tool: phony
+    inputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer"]
+    outputs: ["<ImageViewer-arm64-apple-macosx15.0-release.exe>"]
+
+  "<ImageViewer-arm64-apple-macosx15.0-release.module>":
+    tool: phony
+    inputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/AppDelegate.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/ContentView.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/main.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/Modules/ImageViewer.swiftmodule"]
+    outputs: ["<ImageViewer-arm64-apple-macosx15.0-release.module>"]
+
+  "C.ImageViewer-arm64-apple-macosx15.0-release.exe":
+    tool: shell
+    inputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/AppDelegate.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/ContentView.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/main.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.product/Objects.LinkFileList"]
+    outputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer"]
+    description: "Linking ./.build/arm64-apple-macosx/release/ImageViewer"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-L","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release","-o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer","-module-name","ImageViewer","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-dead_strip","-Xlinker","-alias","-Xlinker","_ImageViewer_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.product/Objects.LinkFileList","-target","arm64-apple-macosx13.0","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xlinker","-rpath","-Xlinker","/Library/Developer/CommandLineTools/Library/Developer/Frameworks"]
+
+  "C.ImageViewer-arm64-apple-macosx15.0-release.module":
+    tool: shell
+    inputs: ["/Users/weiwenting/AI Project/ImageViewer/Sources/AppDelegate.swift","/Users/weiwenting/AI Project/ImageViewer/Sources/ContentView.swift","/Users/weiwenting/AI Project/ImageViewer/Sources/main.swift","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/sources"]
+    outputs: ["/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/AppDelegate.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/ContentView.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/main.swift.o","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/Modules/ImageViewer.swiftmodule"]
+    description: "Compiling Swift Module 'ImageViewer' (3 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","ImageViewer","-emit-dependencies","-emit-module","-emit-module-path","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/Modules/ImageViewer.swiftmodule","-output-file-map","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/output-file-map.json","-whole-module-optimization","-num-threads","8","-c","@/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ImageViewer.build/sources","-I","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/Modules","-target","arm64-apple-macosx13.0","-O","-j8","-DSWIFT_PACKAGE","-module-cache-path","/Users/weiwenting/AI Project/ImageViewer/.build/arm64-apple-macosx/release/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","ImageViewer_main","-swift-version","5","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","imageviewer"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/weiwenting/AI Project/ImageViewer/Sources/","/Users/weiwenting/AI Project/ImageViewer/Package.swift","/Users/weiwenting/AI Project/ImageViewer/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

@@ -1,0 +1,8 @@
+version: "Apple Swift version 6.1 (swiftlang-6.1.0.110.21 clang-1700.0.13.3)"
+options: "f9f0c0d7dcbdde1cf5232ed1e02ec263bc20ec517a152957b97fb373e97a49d2"
+build_start_time: [1773931236, 836837000]
+build_end_time: [1773931240, 273339000]
+inputs:
+  "/Users/weiwenting/AI Project/ImageViewer/Sources/AppDelegate.swift": [1773911981, 43191611]
+  "/Users/weiwenting/AI Project/ImageViewer/Sources/ContentView.swift": [1773931225, 9567640]
+  "/Users/weiwenting/AI Project/ImageViewer/Sources/main.swift": [1773906615, 184037079]
