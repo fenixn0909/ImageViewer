@@ -888,15 +888,6 @@ struct ImagePreview: View {
                                     resizeEdge = .none
                                 }
                         )
-                        .simultaneousGesture(
-                            MagnificationGesture()
-                                .onChanged { value in
-                                    zoomLevel = max(0.1, min(50, lastZoomLevel * value))
-                                }
-                                .onEnded { _ in
-                                    lastZoomLevel = zoomLevel
-                                }
-                        )
 
                     if showGrid {
                         GridView(
@@ -942,12 +933,22 @@ struct ImagePreview: View {
                     }
                 }
                 .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
+                .contentShape(Rectangle())
                 .onAppear {
                     updateImageFrame(imageSize: item.image.size, viewSize: geometry.size)
                 }
                 .onChange(of: geometry.size) { newSize in
                     updateImageFrame(imageSize: item.image.size, viewSize: newSize)
                 }
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            zoomLevel = max(0.1, min(50, lastZoomLevel * value))
+                        }
+                        .onEnded { _ in
+                            lastZoomLevel = zoomLevel
+                        }
+                )
             }
             .background(Color(nsColor: .windowBackgroundColor))
         }
