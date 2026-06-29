@@ -38,7 +38,6 @@ struct ContentView: View {
         .background(arrowKeyButtons)
         .onAppear {
             _ = AnimationPanelController.shared
-            AnimationStore.shared.loadSaved()
         }
     }
 

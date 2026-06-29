@@ -83,11 +83,7 @@ final class AnimationStore: ObservableObject {
         return dir.appendingPathComponent("animations.json")
     }
 
-    private init() {}
-
-    func loadSaved() {
-        load()
-    }
+    private init() { load() }
 
     func add(name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
@@ -152,9 +148,9 @@ struct AnimationContentView: View {
     @State private var animName: String = ""
     @StateObject private var animStore = AnimationStore.shared
     @StateObject private var imageStore = ImageStore.shared
-    @State private var loopEnabled = UserDefaults.standard.object(forKey: "animLoop").flatMap { $0 as? Bool } ?? true
-    @State private var pingPongEnabled = UserDefaults.standard.bool(forKey: "animPingPong")
-    @State private var speedText = UserDefaults.standard.string(forKey: "animSpeed") ?? "1"
+    @AppStorage("animLoop") private var loopEnabled = true
+    @AppStorage("animPingPong") private var pingPongEnabled = false
+    @AppStorage("animSpeed") private var speedText = "1"
     @State private var selectedFrameIndex = 0
 
     var body: some View {
@@ -235,13 +231,6 @@ struct AnimationContentView: View {
             .frame(height: 70)
         }
         .frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in saveViewState() }
-    }
-
-    private func saveViewState() {
-        UserDefaults.standard.set(loopEnabled, forKey: "animLoop")
-        UserDefaults.standard.set(pingPongEnabled, forKey: "animPingPong")
-        UserDefaults.standard.set(speedText, forKey: "animSpeed")
     }
 
     private func loadThumbnail(path: String) -> NSImage? {
@@ -264,11 +253,9 @@ struct AnimPreview: View {
     @State private var accumulator: TimeInterval = 0
     @State private var zoomLevel: CGFloat = 1
     @State private var lastZoomLevel: CGFloat = 1
-    @State private var previewHeight: CGFloat = {
-        let h = UserDefaults.standard.double(forKey: "animPreviewHeight")
-        return h >= 60 ? h : 120
-    }()
-    @State private var dragStartHeight: CGFloat = 120
+    @AppStorage("animPreviewHeight") private var previewHeightDouble: Double = 120
+    @GestureState private var dragOffset: CGFloat = 0
+    private var displayHeight: CGFloat { max(60, min(500, CGFloat(previewHeightDouble) + dragOffset)) }
     private let baseInterval: TimeInterval = 0.08
     private let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
@@ -289,7 +276,7 @@ struct AnimPreview: View {
                         .scaleEffect(zoomLevel)
                         .frame(maxWidth: .infinity)
                         .cornerRadius(6)
-                        .frame(height: previewHeight)
+                        .frame(height: displayHeight)
                         .clipped()
                         .gesture(MagnificationGesture()
                             .onChanged { zoomLevel = max(0.5, min(10, lastZoomLevel * $0)) }
@@ -302,8 +289,8 @@ struct AnimPreview: View {
                     .cornerRadius(2)
                     .overlay(Rectangle().fill(Color.clear).contentShape(Rectangle()))
                     .gesture(DragGesture()
-                        .onChanged { previewHeight = max(60, min(500, dragStartHeight + $0.translation.height)) }
-                        .onEnded { _ in dragStartHeight = previewHeight })
+                        .updating($dragOffset) { value, state, _ in state = value.translation.height }
+                        .onEnded { previewHeightDouble = Double(max(60, min(500, CGFloat(previewHeightDouble) + $0.translation.height))) })
 
                 Button(action: togglePlay) {
                     Text(isPlaying ? "Stop" : "Play").font(.caption)
@@ -313,7 +300,7 @@ struct AnimPreview: View {
             } else {
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(Color.gray.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6]))
-                    .frame(height: previewHeight)
+                    .frame(height: displayHeight)
                     .overlay(Text("No sprites").foregroundColor(.secondary).font(.caption))
             }
         }
@@ -324,9 +311,6 @@ struct AnimPreview: View {
             accumulator = 0
             zoomLevel = 1
             lastZoomLevel = 1
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-            UserDefaults.standard.set(previewHeight, forKey: "animPreviewHeight")
         }
     }
 
