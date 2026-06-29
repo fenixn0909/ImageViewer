@@ -89,6 +89,7 @@ struct ContentView: View {
                 Toggle("Keep Zoom", isOn: $settings.keepZoom).toggleStyle(.checkbox)
                 Spacer()
                 Button("Animation") { AnimationPanelController.shared.toggle() }
+                Button("Clear All") { store.clearAll() }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Color(nsColor: .controlBackgroundColor))

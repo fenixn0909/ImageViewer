@@ -66,6 +66,11 @@ struct AnimationData: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
     var imagePaths: [String] = []
+    var frameWidth: CGFloat = 0
+    var frameHeight: CGFloat = 0
+    var offsetX: CGFloat = 0
+    var offsetY: CGFloat = 0
+    var bgColorHex: String = "#000000"
 }
 
 // MARK: - Animation Store
@@ -103,7 +108,12 @@ final class AnimationStore: ObservableObject {
     func addImage(_ path: String) {
         guard let id = selectedAnimationId, let idx = animations.firstIndex(where: { $0.id == id }),
               !animations[idx].imagePaths.contains(path) else { return }
+        let wasEmpty = animations[idx].imagePaths.isEmpty
         animations[idx].imagePaths.append(path)
+        if wasEmpty, let size = imageSize(at: path) {
+            animations[idx].frameWidth = size.width
+            animations[idx].frameHeight = size.height
+        }
         save()
     }
 
@@ -118,7 +128,20 @@ final class AnimationStore: ObservableObject {
         return animations.first { $0.id == id }
     }
 
-    private func save() {
+    var selectedAnimationIndex: Int? {
+        guard let id = selectedAnimationId else { return nil }
+        return animations.firstIndex(where: { $0.id == id })
+    }
+
+    var selectedAnimationBinding: Binding<AnimationData>? {
+        guard let id = selectedAnimationId, let idx = animations.firstIndex(where: { $0.id == id }) else { return nil }
+        return Binding(
+            get: { self.animations[idx] },
+            set: { self.animations[idx] = $0; self.save() }
+        )
+    }
+
+    func save() {
         guard let data = try? JSONEncoder().encode(animations) else { return }
         try? data.write(to: saveURL)
         if let id = selectedAnimationId {
@@ -142,6 +165,12 @@ final class AnimationStore: ObservableObject {
     }
 }
 
+private func imageSize(at path: String) -> CGSize? {
+    guard let image = NSImage(contentsOfFile: path) else { return nil }
+    let rep = image.representations.first
+    return CGSize(width: rep?.pixelsWide ?? Int(image.size.width), height: rep?.pixelsHigh ?? Int(image.size.height))
+}
+
 // MARK: - Animation Content View
 
 struct AnimationContentView: View {
@@ -152,6 +181,12 @@ struct AnimationContentView: View {
     @AppStorage("animPingPong") private var pingPongEnabled = false
     @AppStorage("animSpeed") private var speedText = "1"
     @State private var selectedFrameIndex = 0
+    @State private var frameWidthText: String = ""
+    @State private var frameHeightText: String = ""
+
+    private var selectedAnimBinding: Binding<AnimationData>? {
+        animStore.selectedAnimationBinding
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -174,6 +209,27 @@ struct AnimationContentView: View {
                 Spacer()
             }
             .padding(.horizontal, 8).padding(.vertical, 2)
+
+            if let _ = animStore.selectedAnimation {
+                HStack(spacing: 8) {
+                    Text("W:").font(.caption).foregroundColor(.secondary)
+                    TextField("px", text: $frameWidthText)
+                        .textFieldStyle(.roundedBorder).frame(width: 50)
+                        .onSubmit { applyFrameSize() }
+                    Text("H:").font(.caption).foregroundColor(.secondary)
+                    TextField("px", text: $frameHeightText)
+                        .textFieldStyle(.roundedBorder).frame(width: 50)
+                        .onSubmit { applyFrameSize() }
+                    if let binding = selectedAnimBinding {
+                        ColorPicker("Bg", selection: Binding(
+                            get: { Color(hex: binding.wrappedValue.bgColorHex) ?? .black },
+                            set: { binding.wrappedValue.bgColorHex = $0.toHex(); animStore.save() }
+                        )).labelsHidden().frame(width: 24)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 8).padding(.vertical, 2)
+            }
 
             AnimPreview(animStore: animStore, imageStore: imageStore, loopEnabled: $loopEnabled, pingPongEnabled: $pingPongEnabled, speedText: $speedText, selectedFrameIndex: $selectedFrameIndex)
                 .padding(.horizontal, 8).padding(.vertical, 4)
@@ -231,6 +287,84 @@ struct AnimationContentView: View {
             .frame(height: 70)
         }
         .frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
+        .background(animKeyboardButtons)
+        .onChange(of: animStore.selectedAnimationId) { _ in
+            syncFrameSizeText()
+            selectedFrameIndex = 0
+        }
+        .onAppear { syncFrameSizeText() }
+    }
+
+    private func syncFrameSizeText() {
+        if let anim = animStore.selectedAnimation {
+            frameWidthText = anim.frameWidth > 0 ? "\(Int(anim.frameWidth))" : ""
+            frameHeightText = anim.frameHeight > 0 ? "\(Int(anim.frameHeight))" : ""
+        } else {
+            frameWidthText = ""
+            frameHeightText = ""
+        }
+    }
+
+    private func applyFrameSize() {
+        guard let binding = selectedAnimBinding else { return }
+        let w = max(1, Int(frameWidthText) ?? Int(binding.wrappedValue.frameWidth))
+        let h = max(1, Int(frameHeightText) ?? Int(binding.wrappedValue.frameHeight))
+        binding.wrappedValue.frameWidth = CGFloat(w)
+        binding.wrappedValue.frameHeight = CGFloat(h)
+        animStore.save()
+        syncFrameSizeText()
+    }
+
+    @ViewBuilder
+    private var animKeyboardButtons: some View {
+        HStack(spacing: 0) {
+            Button("") { previousFrame() }.keyboardShortcut(.leftArrow, modifiers: []).opacity(0)
+            Button("") { nextFrame() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
+            Button("") { previousAnimation() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
+            Button("") { nextAnimation() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: -1, dy: 0) }.keyboardShortcut("j", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: 1, dy: 0) }.keyboardShortcut("l", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: 0, dy: -1) }.keyboardShortcut("i", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: 0, dy: 1) }.keyboardShortcut("k", modifiers: []).opacity(0)
+        }
+        .frame(width: 0, height: 0)
+    }
+
+    private func previousFrame() {
+        guard let anim = animStore.selectedAnimation, !anim.imagePaths.isEmpty else { return }
+        selectedFrameIndex = (selectedFrameIndex - 1 + anim.imagePaths.count) % anim.imagePaths.count
+    }
+
+    private func nextFrame() {
+        guard let anim = animStore.selectedAnimation, !anim.imagePaths.isEmpty else { return }
+        selectedFrameIndex = (selectedFrameIndex + 1) % anim.imagePaths.count
+    }
+
+    private func previousAnimation() {
+        guard !animStore.animations.isEmpty else { return }
+        let ids = animStore.animations.map(\.id)
+        if let current = animStore.selectedAnimationId, let idx = ids.firstIndex(of: current) {
+            animStore.selectedAnimationId = ids[(idx - 1 + ids.count) % ids.count]
+        } else {
+            animStore.selectedAnimationId = ids[0]
+        }
+    }
+
+    private func nextAnimation() {
+        guard !animStore.animations.isEmpty else { return }
+        let ids = animStore.animations.map(\.id)
+        if let current = animStore.selectedAnimationId, let idx = ids.firstIndex(of: current) {
+            animStore.selectedAnimationId = ids[(idx + 1) % ids.count]
+        } else {
+            animStore.selectedAnimationId = ids[0]
+        }
+    }
+
+    private func nudgeOffset(dx: CGFloat, dy: CGFloat) {
+        guard let binding = selectedAnimBinding else { return }
+        binding.wrappedValue.offsetX += dx
+        binding.wrappedValue.offsetY += dy
+        animStore.save()
     }
 
     private func loadThumbnail(path: String) -> NSImage? {
@@ -269,15 +403,21 @@ struct AnimPreview: View {
                 let paths = anim.imagePaths
                 let clampedIndex = min(selectedFrameIndex, paths.count - 1)
                 let path = paths[clampedIndex]
+                let useWidth = anim.frameWidth > 0 ? anim.frameWidth : nil
+                let useHeight = anim.frameHeight > 0 ? anim.frameHeight : nil
+                let bgColor = Color(hex: anim.bgColorHex) ?? .black
                 if let nsImage = loadImage(path: path) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .scaleEffect(zoomLevel)
+                        .frame(maxWidth: useWidth, maxHeight: useHeight)
                         .frame(maxWidth: .infinity)
+                        .background(bgColor)
                         .cornerRadius(6)
                         .frame(height: displayHeight)
                         .clipped()
+                        .offset(x: anim.offsetX, y: anim.offsetY)
                         .gesture(MagnificationGesture()
                             .onChanged { zoomLevel = max(0.5, min(10, lastZoomLevel * $0)) }
                             .onEnded { _ in lastZoomLevel = zoomLevel })
