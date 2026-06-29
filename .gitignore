@@ -2,3 +2,6 @@
 *.xcworkspace/
 xcuserdata/
 .DS_Store
+ImageViewer.app/
+project.yml
+*.xcodeproj/

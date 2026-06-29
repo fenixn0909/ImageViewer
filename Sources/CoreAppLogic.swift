@@ -180,8 +180,15 @@ final class SettingsManager: ObservableObject {
     @Published var fixedSelectionHeight: String { didSet { defaults.set(fixedSelectionHeight, forKey: "fixedSelectionHeight") } }
     @Published var selectionColorHex: String { didSet { defaults.set(selectionColorHex, forKey: "selectionColorHex") } }
     @Published var keepZoom: Bool { didSet { defaults.set(keepZoom, forKey: "keepZoom") } }
+    @Published var snapToGrid: Bool { didSet { defaults.set(snapToGrid, forKey: "snapToGrid") } }
+    @Published var gridColorHex: String { didSet { defaults.set(gridColorHex, forKey: "gridColorHex") } }
+    @Published var gridStrokeWidth: String { didSet { defaults.set(gridStrokeWidth, forKey: "gridStrokeWidth") } }
+    @Published var gridOffsetX: Double { didSet { defaults.set(gridOffsetX, forKey: "gridOffsetX") } }
+    @Published var gridOffsetY: Double { didSet { defaults.set(gridOffsetY, forKey: "gridOffsetY") } }
 
     var selectionColor: Color { Color(hex: selectionColorHex) ?? .blue }
+    var gridColor: Color { Color(hex: gridColorHex) ?? .white }
+    var parsedGridStrokeWidth: CGFloat { max(0.5, CGFloat(Int(gridStrokeWidth) ?? 1)) }
     var parsedGridWidth: Int { max(1, Int(gridWidth) ?? 50) }
     var parsedGridHeight: Int { max(1, Int(gridHeight) ?? 50) }
     var parsedFixedWidth: Int { max(1, Int(fixedSelectionWidth) ?? 0) }
@@ -196,6 +203,11 @@ final class SettingsManager: ObservableObject {
         fixedSelectionHeight = defaults.string(forKey: "fixedSelectionHeight") ?? ""
         selectionColorHex = defaults.string(forKey: "selectionColorHex") ?? "#0000FF"
         keepZoom = defaults.bool(forKey: "keepZoom")
+        snapToGrid = defaults.bool(forKey: "snapToGrid")
+        gridColorHex = defaults.string(forKey: "gridColorHex") ?? "#FFFFFF"
+        gridStrokeWidth = defaults.string(forKey: "gridStrokeWidth") ?? "1"
+        gridOffsetX = defaults.double(forKey: "gridOffsetX")
+        gridOffsetY = defaults.double(forKey: "gridOffsetY")
     }
 }
 
