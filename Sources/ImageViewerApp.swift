@@ -9,7 +9,7 @@ struct ImageViewerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
-                .frame(minWidth: 800, minHeight: 600)
+                .frame(minWidth: 800, minHeight: 400)
                 .onAppear {
                     if let window = NSApplication.shared.windows.first {
                         window.minSize = NSSize(width: 400, height: 300)
@@ -38,7 +38,7 @@ struct ImageViewerApp: App {
                 Button("Copy Selection") {
                     NotificationCenter.default.post(name: .copySelection, object: nil)
                 }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .keyboardShortcut("c", modifiers: .command)
                 
                 Divider()
                 

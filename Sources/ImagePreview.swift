@@ -61,9 +61,13 @@ struct ImagePreview: View {
                                 isFixedSize: settings.fixedSelectionEnabled,
                                 onCopy: copySelection,
                                 onClear: { selectionRect = nil },
-                                onColorChange: { settings.selectionColorHex = $0.toHex() }
+                                onColorChange: { settings.selectionColorHex = $0.toHex() },
+                                onAddSprite: addSpriteFromSelection
                             )
                         }
+
+                        Button("") { addSpriteFromSelection() }
+                            .keyboardShortcut("k", modifiers: []).opacity(0).frame(width: 0, height: 0)
                     }
                     .frame(width: max(item.image.size.width * displayScale, geometry.size.width),
                            height: max(item.image.size.height * displayScale, geometry.size.height))
@@ -140,7 +144,10 @@ struct ImagePreview: View {
         let currentPoint = CGPoint(x: canvasLocation.x / displayScale, y: canvasLocation.y / displayScale)
 
         if isDragging || isResizing {
-            let delta = CGPoint(x: currentPoint.x - dragStartPoint.x, y: currentPoint.y - dragStartPoint.y)
+            var delta = CGPoint(x: currentPoint.x - dragStartPoint.x, y: currentPoint.y - dragStartPoint.y)
+            if isDragging && NSEvent.modifierFlags.contains(.shift) {
+                if abs(delta.x) >= abs(delta.y) { delta.y = 0 } else { delta.x = 0 }
+            }
             if isResizing {
                 selectionRect = snapRectToGrid(applyResizeToRect(dragStartRect, delta: delta, edge: resizeEdge))
             } else {
@@ -300,6 +307,29 @@ struct ImagePreview: View {
         pasteboard.writeObjects([finalImage])
     }
 
+    private func addSpriteFromSelection() {
+        guard let rect = selectionRect,
+              let cgImage = item.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        let sX = CGFloat(cgImage.width) / item.image.size.width
+        let sY = CGFloat(cgImage.height) / item.image.size.height
+        let pixelRect = CGRect(x: Int(rect.origin.x * sX), y: Int(rect.origin.y * sY),
+                               width: Int(rect.width * sX), height: Int(rect.height * sY))
+
+        guard let cropped = cgImage.cropping(to: pixelRect) else { return }
+
+        let spritesDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ImageViewer").appendingPathComponent("Sprites")
+        try? FileManager.default.createDirectory(at: spritesDir, withIntermediateDirectories: true)
+
+        let url = spritesDir.appendingPathComponent("sprite-\(UUID().uuidString).png")
+        let bitmap = NSBitmapImageRep(cgImage: cropped)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: url)
+
+        AnimationStore.shared.addImage(url.path)
+    }
+
     struct SelectionOverlay: View {
         let rect: CGRect
         let selectionColor: Color
@@ -307,6 +337,7 @@ struct ImagePreview: View {
         let onCopy: () -> Void
         let onClear: () -> Void
         let onColorChange: (Color) -> Void
+        let onAddSprite: () -> Void
 
         var body: some View {
             ZStack {
@@ -331,8 +362,11 @@ struct ImagePreview: View {
             .allowsHitTesting(false)
             .frame(width: max(0, rect.width), height: max(0, rect.height))
             .overlay(alignment: .bottom) {
-                HStack(spacing: 24) {
+                HStack(spacing: 24) {   //Popup-Stack
                     Button(action: onCopy) { Image(systemName: "doc.on.doc").font(.system(size: 20)) }
+                        .buttonStyle(.plain)
+                    
+                    Button(action: onAddSprite) { Image(systemName: "square.grid.3x3").font(.system(size: 20)) }
                         .buttonStyle(.plain)
                     
                     ColorPicker("", selection: Binding(

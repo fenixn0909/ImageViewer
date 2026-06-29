@@ -36,6 +36,10 @@ struct ContentView: View {
             Text(errorToShow?.localizedDescription ?? "Unknown error")
         }
         .background(arrowKeyButtons)
+        .onAppear {
+            _ = AnimationPanelController.shared
+            AnimationStore.shared.loadSaved()
+        }
     }
 
     @ViewBuilder
@@ -85,6 +89,7 @@ struct ContentView: View {
                 Divider().frame(height: 16)
                 Toggle("Keep Zoom", isOn: $settings.keepZoom).toggleStyle(.checkbox)
                 Spacer()
+                Button("Animation") { AnimationPanelController.shared.toggle() }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Color(nsColor: .controlBackgroundColor))

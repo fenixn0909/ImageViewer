@@ -139,7 +139,17 @@ final class ImageStore: ObservableObject {
     @Published var selectedImageId: UUID?
     @Published var lastError: ImageLoadError?
 
-    private init() {}
+    private var pathsURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("ImageViewer")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("paths.json")
+    }
+
+    private init() {
+        loadPaths()
+        NotificationCenter.default.addObserver(self, selector: #selector(savePaths), name: NSApplication.willTerminateNotification, object: nil)
+    }
 
     func addImage(_ image: NSImage, thumbnail: NSImage?, path: String) {
         guard !images.contains(where: { $0.filePath == path }) else { return }
@@ -150,21 +160,40 @@ final class ImageStore: ObservableObject {
         }
         if let index = index { images.insert(item, at: index) } else { images.append(item) }
         if selectedImageId == nil { selectedImageId = item.id }
+        savePaths()
     }
 
     func removeImage(_ id: UUID) {
         images.removeAll { $0.id == id }
         if selectedImageId == id { selectedImageId = images.first?.id }
         if images.isEmpty { NotificationCenter.default.post(name: .clearSelection, object: nil) }
+        savePaths()
     }
 
     func clearAll() {
         images.removeAll()
         selectedImageId = nil
+        savePaths()
     }
 
     func isDuplicate(_ path: String) -> Bool { images.contains(where: { $0.filePath == path }) }
     func getSelectedImage() -> ImageItem? { images.first { $0.id == selectedImageId } }
+    func getItemByPath(_ path: String) -> ImageItem? { images.first { $0.filePath == path } }
+
+    @objc private func savePaths() {
+        let paths = images.map(\.filePath).filter { !$0.hasPrefix("clipboard") && !$0.hasPrefix("dropped") }
+        guard let data = try? JSONEncoder().encode(paths) else { return }
+        try? data.write(to: pathsURL)
+    }
+
+    private func loadPaths() {
+        guard let data = try? Data(contentsOf: pathsURL),
+              let paths = try? JSONDecoder().decode([String].self, from: data) else { return }
+        for path in paths {
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            Task { await ImageLoader.shared.loadAndSend(url: URL(fileURLWithPath: path)) }
+        }
+    }
 }
 
 @MainActor
