@@ -238,6 +238,7 @@ struct AnimationContentView: View {
     @State private var animBgColor: Color = .black
     @State private var transparentBg: Bool = false
     @State private var prevAnimId: UUID?
+    @State private var thumbnailCache: [String: NSImage] = [:]
 
     private var selectedAnimBinding: Binding<AnimationData>? {
         animStore.selectedAnimationBinding
@@ -331,7 +332,7 @@ struct AnimationContentView: View {
                 LazyHStack(spacing: 6) {
                     if let anim = animStore.selectedAnimation {
                         ForEach(Array(anim.frames.enumerated()), id: \.element.id) { index, frame in
-                            if let nsImage = loadThumbnail(path: frame.path) {
+                            if let nsImage = loadWrappedThumbnail(frame: frame, w: anim.frameWidth, h: anim.frameHeight) {
                                 ZStack(alignment: .topTrailing) {
                                     Button {
                                         selectedFrameIndex = index
@@ -377,6 +378,7 @@ struct AnimationContentView: View {
             prevAnimId = newId
             syncFrameSizeText()
             selectedFrameIndex = 0
+            thumbnailCache.removeAll()
             if let anim = animStore.selectedAnimation {
                 animBgColor = Color(hex: anim.bgColorHex) ?? .black
                 transparentBg = anim.transparentBg
@@ -387,6 +389,11 @@ struct AnimationContentView: View {
             guard let id = animStore.selectedAnimationId, let idx = animStore.animations.firstIndex(where: { $0.id == id }) else { return }
             animStore.animations[idx].transparentBg = transparentBg
             animStore.save()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notif in
+            if let win = notif.object as? NSWindow, win.title == "Animation" {
+                previewFocused = true
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in saveBgColor() }
         .onAppear {
@@ -506,6 +513,34 @@ struct AnimationContentView: View {
         }
         return NSImage(contentsOfFile: path)
     }
+
+    private func loadWrappedThumbnail(frame: AnimFrame, w: CGFloat, h: CGFloat) -> NSImage? {
+        let rawImage = loadThumbnail(path: frame.path)
+        guard let img = rawImage, w > 0, h > 0 else { return rawImage }
+        let cacheKey = "\(frame.path)_\(w)_\(h)_\(frame.offsetX)_\(frame.offsetY)_thumb"
+        if let cached = thumbnailCache[cacheKey] { return cached }
+        let ox = frame.offsetX.truncatingRemainder(dividingBy: w)
+        let oy = frame.offsetY.truncatingRemainder(dividingBy: h)
+        let wx = ox >= 0 ? ox : ox + w
+        let wy = oy >= 0 ? oy : oy + h
+        let result = NSImage(size: NSSize(width: w, height: h))
+        result.lockFocus()
+        let rects = [
+            NSRect(x: wx, y: -wy, width: w, height: h),
+            NSRect(x: wx - w, y: -wy, width: w, height: h),
+            NSRect(x: wx, y: -wy + h, width: w, height: h),
+            NSRect(x: wx - w, y: -wy + h, width: w, height: h),
+        ]
+        for rect in rects {
+            img.draw(in: rect, from: NSRect(origin: .zero, size: img.size), operation: .sourceOver, fraction: 1)
+        }
+        result.unlockFocus()
+        DispatchQueue.main.async {
+            if thumbnailCache.count > 50 { thumbnailCache.removeAll() }
+            thumbnailCache[cacheKey] = result
+        }
+        return result
+    }
 }
 
 struct AnimPreview: View {
@@ -585,6 +620,13 @@ struct AnimPreview: View {
                     .overlay(Text("No sprites").foregroundColor(.secondary).font(.caption))
             }
         }
+        .overlay(
+            HStack(spacing: 0) {
+                Button("") { togglePlay() }.keyboardShortcut(.return, modifiers: [])
+                Button("") { stitchAndShow() }.keyboardShortcut("m", modifiers: [])
+            }
+            .opacity(0).frame(width: 0, height: 0).allowsHitTesting(false)
+        )
         .onChange(of: animStore.selectedAnimationId) { _ in
             isPlaying = false
             selectedFrameIndex = 0
@@ -722,7 +764,7 @@ struct AnimPreview: View {
     }
 
     private func makeDisplayImage(_ image: NSImage, path: String, w: CGFloat?, h: CGFloat?, offsetX: CGFloat, offsetY: CGFloat) -> NSImage {
-        guard let w = w, let h = h, !isPlaying else { return image }
+        guard let w = w, let h = h else { return image }
         let cacheKey = "\(path)_\(w)_\(h)_\(offsetX)_\(offsetY)"
         if let cached = displayCache[cacheKey] { return cached }
         let tiled = tiledImage(image, w: w, h: h, offsetX: offsetX, offsetY: offsetY) ?? image
@@ -747,7 +789,7 @@ struct AnimPreview: View {
             NSRect(x: wx - w, y: -wy + h, width: w, height: h),
         ]
         for rect in rects {
-            image.draw(in: rect, from: NSRect(origin: .zero, size: image.size), operation: .copy, fraction: 1)
+            image.draw(in: rect, from: NSRect(origin: .zero, size: image.size), operation: .sourceOver, fraction: 1)
         }
         result.unlockFocus()
         return result
