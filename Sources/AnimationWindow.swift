@@ -136,10 +136,15 @@ final class AnimationStore: ObservableObject {
     }
 
     var selectedAnimationBinding: Binding<AnimationData>? {
-        guard let id = selectedAnimationId, let idx = animations.firstIndex(where: { $0.id == id }) else { return nil }
+        guard let id = selectedAnimationId else { return nil }
+        guard animations.contains(where: { $0.id == id }) else { return nil }
         return Binding(
-            get: { self.animations[idx] },
-            set: { self.animations[idx] = $0; self.save() }
+            get: { self.animations.first(where: { $0.id == id }) ?? AnimationData(name: "") },
+            set: { newValue in
+                guard let idx = self.animations.firstIndex(where: { $0.id == id }) else { return }
+                self.animations[idx] = newValue
+                self.save()
+            }
         )
     }
 
@@ -235,18 +240,18 @@ struct AnimationContentView: View {
             AnimPreview(animStore: animStore, imageStore: imageStore, loopEnabled: $loopEnabled, pingPongEnabled: $pingPongEnabled, speedText: $speedText, selectedFrameIndex: $selectedFrameIndex)
                 .padding(.horizontal, 8).padding(.vertical, 4)
 
-            List(animStore.animations) { anim in
+            List(animStore.animations, selection: $animStore.selectedAnimationId) { anim in
                 HStack {
                     Text(anim.name).font(.body)
                     Spacer()
-                    Button(action: { animStore.remove(anim.id) }) {
+                    Button(role: .destructive) {
+                        animStore.remove(anim.id)
+                    } label: {
                         Image(systemName: "xmark.circle.fill").font(.system(size: 14))
                     }
                     .buttonStyle(.plain)
                 }
-                .contentShape(Rectangle())
-                .onTapGesture { saveBgColor(); animStore.selectedAnimationId = anim.id }
-                .listRowBackground(anim.id == animStore.selectedAnimationId ? Color.accentColor.opacity(0.3) : Color.clear)
+                .tag(anim.id)
             }
             .listStyle(.plain)
 
@@ -264,15 +269,19 @@ struct AnimationContentView: View {
                         ForEach(Array(anim.imagePaths.enumerated()), id: \.element) { index, path in
                             if let nsImage = loadThumbnail(path: path) {
                                 ZStack(alignment: .topTrailing) {
-                                    Image(nsImage: nsImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 50, height: 50)
-                                        .clipped().cornerRadius(4)
-                                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(index == selectedFrameIndex ? Color.accentColor : Color.clear, lineWidth: 3))
-                                        .onTapGesture { selectedFrameIndex = index }
+                                    Button {
+                                        selectedFrameIndex = index
+                                    } label: {
+                                        Image(nsImage: nsImage)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: 50, height: 50)
+                                            .clipped().cornerRadius(4)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(index == selectedFrameIndex ? Color.accentColor : Color.clear, lineWidth: 3))
 
-                                    Button(action: { animStore.removeImage(path, from: anim.id) }) {
+                                    Button(action: { removeFrame(at: path, from: anim.id) }) {
                                         Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundColor(.white)
                                             .background(Circle().fill(Color.red).frame(width: 10, height: 10))
                                     }
@@ -296,9 +305,7 @@ struct AnimationContentView: View {
                 animBgColor = Color(hex: anim.bgColorHex) ?? .black
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)
-            .compactMap { $0.object as? NSWindow }
-            .filter { $0 === NSColorPanel.shared }) { _ in saveBgColor() }
+        .onChange(of: animBgColor) { _ in saveBgColor() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in saveBgColor() }
         .onAppear {
             syncFrameSizeText()
@@ -354,6 +361,7 @@ struct AnimationContentView: View {
             Button("") { nudgeOffset(dx: 0, dy: 1, step: 10) }.keyboardShortcut("k", modifiers: [.shift]).opacity(0)
         }
         .frame(width: 0, height: 0)
+        .allowsHitTesting(false)
     }
 
     private func previousFrame() {
@@ -393,6 +401,13 @@ struct AnimationContentView: View {
         binding.wrappedValue.offsetX += dx * step
         binding.wrappedValue.offsetY += dy * step
         animStore.save()
+    }
+
+    private func removeFrame(at path: String, from animationId: UUID) {
+        let anim = animStore.animations.first(where: { $0.id == animationId })
+        let oldCount = anim?.imagePaths.count ?? 0
+        animStore.removeImage(path, from: animationId)
+        selectedFrameIndex = min(selectedFrameIndex, max(0, oldCount - 2))
     }
 
     private func loadThumbnail(path: String) -> NSImage? {
