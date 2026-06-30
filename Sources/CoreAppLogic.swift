@@ -242,6 +242,17 @@ final class SettingsManager: ObservableObject {
     }
 }
 
+// MARK: - Pasteboard Utilities
+
+func copyToPasteboard(_ image: NSImage) {
+    guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+    let bitmap = NSBitmapImageRep(cgImage: cgImage)
+    guard let pngData = bitmap.representation(using: .png, properties: [:]) else { return }
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    pb.setData(pngData, forType: .png)
+}
+
 // MARK: - Color Extensions
 
 extension Color {

@@ -301,10 +301,7 @@ struct ImagePreview: View {
 
         guard let cropped = cgImage.cropping(to: pixelRect) else { return }
         let finalImage = NSImage(cgImage: cropped, size: NSSize(width: Int(rect.width), height: Int(rect.height)))
-        
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects([finalImage])
+        copyToPasteboard(finalImage)
     }
 
     private func addSpriteFromSelection() {

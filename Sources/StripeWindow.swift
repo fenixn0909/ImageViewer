@@ -53,9 +53,7 @@ struct StripeView: View {
     }
 
     private func copyImage() {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.writeObjects([image])
+        copyToPasteboard(image)
     }
 }
 
@@ -102,9 +100,7 @@ private struct KeyHandler: NSViewRepresentable {
         }
 
         private func copyImage() {
-            let pb = NSPasteboard.general
-            pb.clearContents()
-            pb.writeObjects([image])
+            copyToPasteboard(image)
         }
     }
 }
