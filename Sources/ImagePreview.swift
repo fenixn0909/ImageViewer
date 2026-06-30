@@ -325,9 +325,17 @@ struct ImagePreview: View {
                 let cropRect = CGRect(x: max(0, cx), y: max(0, cy), width: fw, height: fh)
                 if let centerCropped = cropped.cropping(to: cropRect) { cropped = centerCropped }
             } else if cropped.width < fw || cropped.height < fh {
+                let hex = anim.bgColorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                var int: UInt64 = 0
+                Scanner(string: hex).scanHexInt64(&int)
+                let r = CGFloat((int >> 16) & 0xFF) / 255
+                let g = CGFloat((int >> 8) & 0xFF) / 255
+                let b = CGFloat(int & 0xFF) / 255
                 let cs = cropped.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
                 let ctx = CGContext(data: nil, width: fw, height: fh, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
                 if let ctx = ctx {
+                    ctx.setFillColor(CGColor(srgbRed: r, green: g, blue: b, alpha: 1))
+                    ctx.fill(CGRect(x: 0, y: 0, width: fw, height: fh))
                     let dx = (fw - cropped.width) / 2
                     let dy = (fh - cropped.height) / 2
                     ctx.draw(cropped, in: CGRect(x: dx, y: dy, width: cropped.width, height: cropped.height))

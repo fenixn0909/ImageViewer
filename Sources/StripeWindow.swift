@@ -4,13 +4,9 @@ import SwiftUI
 // MARK: - Stripe Window
 
 final class StripePanelController: NSWindowController {
-    private static var current: StripePanelController?
-
     private let stripeImage: NSImage
 
     init(stripeImage: NSImage) {
-        Self.current?.window?.close()
-        Self.current = nil
         self.stripeImage = stripeImage
         let vw = min(stripeImage.size.width, 800)
         let vh = min(stripeImage.size.height, 600)
@@ -25,7 +21,6 @@ final class StripePanelController: NSWindowController {
         hostingView.autoresizingMask = [.width, .height]
         win.contentView = hostingView
         super.init(window: win)
-        Self.current = self
         win.center()
     }
 
