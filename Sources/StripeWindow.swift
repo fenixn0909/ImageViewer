@@ -58,7 +58,7 @@ struct StripeView: View {
     }
 
     private func copyImage() {
-        copyToPasteboard(image)
+        copyStripeToPasteboard(image)
     }
 }
 
@@ -105,7 +105,29 @@ private struct KeyHandler: NSViewRepresentable {
         }
 
         private func copyImage() {
-            copyToPasteboard(image)
+            copyStripeToPasteboard(image)
         }
     }
+}
+
+fileprivate func copyStripeToPasteboard(_ image: NSImage) {
+    let pb = NSPasteboard.general
+    pb.clearContents()
+
+    let w = Int(image.size.width)
+    let h = Int(image.size.height)
+    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+    let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    let flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: CGFloat(h))
+    ctx?.concatenate(flip)
+    if let cgCtx = ctx {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: cgCtx, flipped: true)
+        image.draw(in: NSRect(origin: .zero, size: image.size))
+        NSGraphicsContext.restoreGraphicsState()
+    }
+    guard let cgImage = ctx?.makeImage() else { return }
+    let rep = NSBitmapImageRep(cgImage: cgImage)
+    guard let pngData = rep.representation(using: .png, properties: [:]) else { return }
+    pb.setData(pngData, forType: .png)
 }
