@@ -71,6 +71,7 @@ struct AnimationData: Codable, Identifiable, Equatable {
     var offsetX: CGFloat = 0
     var offsetY: CGFloat = 0
     var bgColorHex: String = "#000000"
+    var transparentBg: Bool = false
 }
 
 // MARK: - Animation Store
@@ -191,7 +192,10 @@ struct AnimationContentView: View {
     @State private var frameWidthText: String = ""
     @State private var frameHeightText: String = ""
     @FocusState private var animNameFocused: Bool
+    @FocusState private var previewFocused: Bool
     @State private var animBgColor: Color = .black
+    @State private var transparentBg: Bool = false
+    @State private var prevAnimId: UUID?
 
     private var selectedAnimBinding: Binding<AnimationData>? {
         animStore.selectedAnimationBinding
@@ -233,12 +237,29 @@ struct AnimationContentView: View {
                         .onSubmit { applyFrameSize() }
                     ColorPicker("Bg", selection: $animBgColor).frame(width: 30)
                     Spacer()
+                    Toggle("Transparent", isOn: $transparentBg).toggleStyle(.checkbox).font(.caption)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 2)
             }
 
-            AnimPreview(animStore: animStore, imageStore: imageStore, loopEnabled: $loopEnabled, pingPongEnabled: $pingPongEnabled, speedText: $speedText, selectedFrameIndex: $selectedFrameIndex)
-                .padding(.horizontal, 8).padding(.vertical, 4)
+            VStack(spacing: 2) {
+                HStack {
+                    Text("Preview").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    animNameFocused = false
+                    previewFocused = true
+                }
+
+                AnimPreview(animStore: animStore, imageStore: imageStore, loopEnabled: $loopEnabled, pingPongEnabled: $pingPongEnabled, speedText: $speedText, selectedFrameIndex: $selectedFrameIndex)
+                    .padding(.horizontal, 8)
+            }
+            .padding(.vertical, 4)
+            .focusable()
+            .focused($previewFocused)
 
             List(animStore.animations, selection: $animStore.selectedAnimationId) { anim in
                 HStack {
@@ -251,6 +272,7 @@ struct AnimationContentView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                .contentShape(Rectangle())
                 .tag(anim.id)
             }
             .listStyle(.plain)
@@ -272,14 +294,44 @@ struct AnimationContentView: View {
                                     Button {
                                         selectedFrameIndex = index
                                     } label: {
-                                        Image(nsImage: nsImage)
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                            .frame(width: 50, height: 50)
-                                            .clipped().cornerRadius(4)
+                                        Group {
+                                            if anim.frameWidth > 0, anim.frameHeight > 0, index == selectedFrameIndex {
+                                                let w = anim.frameWidth
+                                                let h = anim.frameHeight
+                                                let ox = anim.offsetX.truncatingRemainder(dividingBy: w)
+                                                let oy = anim.offsetY.truncatingRemainder(dividingBy: h)
+                                                let wx = ox >= 0 ? ox : ox + w
+                                                let wy = oy >= 0 ? oy : oy + h
+                                                let tile = { Image(nsImage: nsImage).resizable().frame(width: w, height: h) }
+                                                let scale = 50 / max(w, h) / 2
+                                                ZStack {
+                                                    tile().offset(x: wx, y: wy)
+                                                    tile().offset(x: wx - w, y: wy)
+                                                    tile().offset(x: wx, y: wy - h)
+                                                    tile().offset(x: wx - w, y: wy - h)
+                                                }
+                                                .frame(width: w, height: h)
+                                                .clipped()
+                                                .scaleEffect(scale)
+                                            } else {
+                                                Image(nsImage: nsImage)
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                            }
+                                        }
+                                        .frame(width: 50, height: 50)
+                                        .contentShape(Rectangle())
+                                        .clipped().cornerRadius(4)
                                     }
                                     .buttonStyle(.plain)
                                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(index == selectedFrameIndex ? Color.accentColor : Color.clear, lineWidth: 3))
+
+                                    Text("\(index + 1)")
+                                        .font(.caption2).foregroundColor(.white)
+                                        .padding(.horizontal, 4).padding(.vertical, 1)
+                                        .background(Color.black.opacity(0.6))
+                                        .cornerRadius(3)
+                                        .offset(x: 3, y: 3)
 
                                     Button(action: { removeFrame(at: path, from: anim.id) }) {
                                         Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundColor(.white)
@@ -298,29 +350,39 @@ struct AnimationContentView: View {
         }
         .frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
         .background(animKeyboardButtons)
-        .onChange(of: animStore.selectedAnimationId) { _ in
+        .onChange(of: animStore.selectedAnimationId) { newId in
+            if let prev = prevAnimId, prev != newId {
+                saveBgColor(for: prev)
+            }
+            prevAnimId = newId
             syncFrameSizeText()
             selectedFrameIndex = 0
             if let anim = animStore.selectedAnimation {
                 animBgColor = Color(hex: anim.bgColorHex) ?? .black
+                transparentBg = anim.transparentBg
             }
         }
         .onChange(of: animBgColor) { _ in saveBgColor() }
+        .onChange(of: transparentBg) { _ in
+            guard let id = animStore.selectedAnimationId, let idx = animStore.animations.firstIndex(where: { $0.id == id }) else { return }
+            animStore.animations[idx].transparentBg = transparentBg
+            animStore.save()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in saveBgColor() }
         .onAppear {
             syncFrameSizeText()
             if let anim = animStore.selectedAnimation {
                 animBgColor = Color(hex: anim.bgColorHex) ?? .black
+                transparentBg = anim.transparentBg
             }
             DispatchQueue.main.async { animNameFocused = false }
         }
     }
 
-    private func saveBgColor() {
-        guard let binding = selectedAnimBinding else { return }
-        var d = binding.wrappedValue
-        d.bgColorHex = animBgColor.toHex()
-        binding.wrappedValue = d
+    private func saveBgColor(for animId: UUID? = nil) {
+        let id = animId ?? animStore.selectedAnimationId
+        guard let id = id, let idx = animStore.animations.firstIndex(where: { $0.id == id }) else { return }
+        animStore.animations[idx].bgColorHex = animBgColor.toHex()
         animStore.save()
     }
 
@@ -359,6 +421,7 @@ struct AnimationContentView: View {
             Button("") { nudgeOffset(dx: 1, dy: 0, step: 10) }.keyboardShortcut("l", modifiers: [.shift]).opacity(0)
             Button("") { nudgeOffset(dx: 0, dy: -1, step: 10) }.keyboardShortcut("i", modifiers: [.shift]).opacity(0)
             Button("") { nudgeOffset(dx: 0, dy: 1, step: 10) }.keyboardShortcut("k", modifiers: [.shift]).opacity(0)
+            Button("") { animNameFocused = false }.keyboardShortcut(.escape, modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
         .allowsHitTesting(false)
@@ -430,12 +493,14 @@ struct AnimPreview: View {
     @State private var accumulator: TimeInterval = 0
     @State private var zoomLevel: CGFloat = 1
     @State private var lastZoomLevel: CGFloat = 1
+    @State private var lastTilingHash: Int = 0
+    @State private var tiledToOriginal: [String: String] = [:]
+
     @AppStorage("animPreviewHeight") private var previewHeightDouble: Double = 120
     @GestureState private var dragOffset: CGFloat = 0
     private var displayHeight: CGFloat { max(60, min(500, CGFloat(previewHeightDouble) + dragOffset)) }
     private let baseInterval: TimeInterval = 0.08
     @State private var timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
-
     private var parsedSpeed: Double {
         max(0.1, Double(speedText) ?? 1)
     }
@@ -446,43 +511,20 @@ struct AnimPreview: View {
                 let paths = anim.imagePaths
                 let clampedIndex = min(selectedFrameIndex, paths.count - 1)
                 let path = paths[clampedIndex]
-                let useWidth = anim.frameWidth > 0 ? anim.frameWidth : nil
-                let useHeight = anim.frameHeight > 0 ? anim.frameHeight : nil
-                let cropMode = useWidth != nil
                 let bgColor = Color(hex: anim.bgColorHex) ?? .black
                 if let nsImage = loadImage(path: path) {
-                    let imageContent = Group {
-                        if cropMode, let w = useWidth, let h = useHeight {
-                            let ox = anim.offsetX.truncatingRemainder(dividingBy: w)
-                            let oy = anim.offsetY.truncatingRemainder(dividingBy: h)
-                            let wx = ox >= 0 ? ox : ox + w
-                            let wy = oy >= 0 ? oy : oy + h
-                            let tile = {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .frame(width: w, height: h)
-                            }
-                            ZStack {
-                                tile().offset(x: wx, y: wy)
-                                tile().offset(x: wx - w, y: wy)
-                                tile().offset(x: wx, y: wy - h)
-                                tile().offset(x: wx - w, y: wy - h)
-                            }
-                            .frame(width: w, height: h)
-                            .clipped()
-                            .scaleEffect(zoomLevel)
-                        } else {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .scaleEffect(zoomLevel)
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    imageContent
+                    let useWidth = anim.frameWidth > 0 ? anim.frameWidth : nil
+                    let useHeight = anim.frameHeight > 0 ? anim.frameHeight : nil
+                    let displayImage = makeDisplayImage(nsImage, path: path, w: useWidth, h: useHeight, offsetX: anim.offsetX, offsetY: anim.offsetY)
+                    Image(nsImage: displayImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .scaleEffect(zoomLevel)
+                        .frame(maxWidth: .infinity)
                         .background(bgColor)
                         .cornerRadius(6)
                         .frame(height: displayHeight)
+                        .contentShape(Rectangle())
                         .clipped()
                         .offset(x: 0, y: 0)
                         .gesture(MagnificationGesture()
@@ -524,6 +566,8 @@ struct AnimPreview: View {
             accumulator = 0
             zoomLevel = 1
             lastZoomLevel = 1
+            lastTilingHash = 0
+            tiledToOriginal = [:]
         }
     }
 
@@ -581,19 +625,24 @@ struct AnimPreview: View {
             let oy = anim.offsetY.truncatingRemainder(dividingBy: h)
             let wx = ox >= 0 ? ox : ox + w
             let wy = oy >= 0 ? oy : oy + h
-            let result = NSImage(size: NSSize(width: w * CGFloat(images.count), height: h))
+            let totalSize = NSSize(width: w * CGFloat(images.count), height: h)
+            let result = NSImage(size: totalSize)
             result.lockFocus()
+            if !anim.transparentBg, let ctx = NSGraphicsContext.current?.cgContext {
+                let hex = anim.bgColorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                var int: UInt64 = 0
+                Scanner(string: hex).scanHexInt64(&int)
+                let r = CGFloat((int >> 16) & 0xFF) / 255
+                let g = CGFloat((int >> 8) & 0xFF) / 255
+                let b = CGFloat(int & 0xFF) / 255
+                ctx.setFillColor(red: r, green: g, blue: b, alpha: 1)
+                ctx.fill(NSRect(origin: .zero, size: totalSize))
+            }
             for (i, img) in images.enumerated() {
                 let x = CGFloat(i) * w
-                let rects = [
-                    NSRect(x: x + wx, y: -wy, width: w, height: h),
-                    NSRect(x: x + wx - w, y: -wy, width: w, height: h),
-                    NSRect(x: x + wx, y: -wy - h, width: w, height: h),
-                    NSRect(x: x + wx - w, y: -wy - h, width: w, height: h),
-                ]
-                for rect in rects {
-                    img.draw(in: rect, from: NSRect(origin: .zero, size: img.size), operation: .copy, fraction: 1)
-                }
+                img.draw(in: NSRect(x: x + wx, y: -wy, width: w, height: h),
+                         from: NSRect(origin: .zero, size: img.size),
+                         operation: .sourceOver, fraction: 1)
             }
             result.unlockFocus()
             return result
@@ -624,6 +673,58 @@ struct AnimPreview: View {
             accumulator = 0
             isPlaying = true
         }
+    }
+
+    private func makeDisplayImage(_ image: NSImage, path: String, w: CGFloat?, h: CGFloat?, offsetX: CGFloat, offsetY: CGFloat) -> NSImage {
+        guard let w = w, let h = h, !isPlaying else { return image }
+        let originalPath = tiledToOriginal[path] ?? path
+        let hash = (originalPath + "\(offsetX),\(offsetY),\(w),\(h)").hashValue
+        if hash == lastTilingHash { return image }
+        lastTilingHash = hash
+        guard let srcImage = loadImage(path: originalPath) else { return image }
+        let tiled = tiledImage(srcImage, w: w, h: h, offsetX: offsetX, offsetY: offsetY) ?? srcImage
+        applyTiledImage(tiled, currentPath: path, originalPath: originalPath)
+        return tiled
+    }
+
+    private func tiledImage(_ image: NSImage, w: CGFloat, h: CGFloat, offsetX: CGFloat, offsetY: CGFloat) -> NSImage? {
+        let ox = offsetX.truncatingRemainder(dividingBy: w)
+        let oy = offsetY.truncatingRemainder(dividingBy: h)
+        let wx = ox >= 0 ? ox : ox + w
+        let wy = oy >= 0 ? oy : oy + h
+        let result = NSImage(size: NSSize(width: w, height: h))
+        result.lockFocus()
+        let rects = [
+            NSRect(x: wx, y: -wy, width: w, height: h),
+            NSRect(x: wx - w, y: -wy, width: w, height: h),
+            NSRect(x: wx, y: -wy + h, width: w, height: h),
+            NSRect(x: wx - w, y: -wy + h, width: w, height: h),
+        ]
+        for rect in rects {
+            image.draw(in: rect, from: NSRect(origin: .zero, size: image.size), operation: .copy, fraction: 1)
+        }
+        result.unlockFocus()
+        return result
+    }
+
+    private func applyTiledImage(_ image: NSImage, currentPath: String, originalPath: String) {
+        let spritesDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ImageViewer").appendingPathComponent("Sprites")
+        try? FileManager.default.createDirectory(at: spritesDir, withIntermediateDirectories: true)
+        let url = spritesDir.appendingPathComponent("tiled-\(UUID().uuidString).png")
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: url)
+
+        guard let animId = animStore.selectedAnimationId,
+              let animIdx = animStore.animations.firstIndex(where: { $0.id == animId }),
+              let pathIdx = animStore.animations[animIdx].imagePaths.firstIndex(of: currentPath) else { return }
+        let oldPath = animStore.animations[animIdx].imagePaths[pathIdx]
+        if oldPath.contains("/tiled-") { try? FileManager.default.removeItem(atPath: oldPath) }
+        animStore.animations[animIdx].imagePaths[pathIdx] = url.path
+        tiledToOriginal[url.path] = originalPath
+        animStore.save()
     }
 
     private func loadImage(path: String) -> NSImage? {
