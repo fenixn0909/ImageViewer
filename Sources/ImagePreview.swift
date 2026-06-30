@@ -37,7 +37,7 @@ struct ImagePreview: View {
                             .fill(Color.white.opacity(0.001))
                             .frame(width: item.image.size.width * displayScale, height: item.image.size.height * displayScale)
                             .gesture(
-                                DragGesture(minimumDistance: 0)
+                                DragGesture(minimumDistance: 2)
                                     .onChanged { handleGlobalDrag(value: $0) }
                                     .onEnded { _ in isSelecting = false; isDragging = false; isResizing = false; resizeEdge = .none }
                             )
@@ -67,7 +67,7 @@ struct ImagePreview: View {
                         }
 
                         Button("") { addSpriteFromSelection() }
-                            .keyboardShortcut("k", modifiers: []).opacity(0).frame(width: 0, height: 0)
+                            .keyboardShortcut("s", modifiers: []).opacity(0).frame(width: 0, height: 0)
                     }
                     .frame(width: max(item.image.size.width * displayScale, geometry.size.width),
                            height: max(item.image.size.height * displayScale, geometry.size.height))
@@ -316,7 +316,36 @@ struct ImagePreview: View {
         let pixelRect = CGRect(x: Int(rect.origin.x * sX), y: Int(rect.origin.y * sY),
                                width: Int(rect.width * sX), height: Int(rect.height * sY))
 
-        guard let cropped = cgImage.cropping(to: pixelRect) else { return }
+        guard var cropped = cgImage.cropping(to: pixelRect) else { return }
+
+        let store = AnimationStore.shared
+        if let anim = store.selectedAnimation, anim.frameWidth > 0, anim.frameHeight > 0 {
+            let fw = Int(anim.frameWidth)
+            let fh = Int(anim.frameHeight)
+            if cropped.width > fw || cropped.height > fh {
+                let cx = (cropped.width - fw) / 2
+                let cy = (cropped.height - fh) / 2
+                let cropRect = CGRect(x: max(0, cx), y: max(0, cy), width: fw, height: fh)
+                if let centerCropped = cropped.cropping(to: cropRect) { cropped = centerCropped }
+            } else if cropped.width < fw || cropped.height < fh {
+                let hex = anim.bgColorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                var int: UInt64 = 0
+                Scanner(string: hex).scanHexInt64(&int)
+                let r = CGFloat((int >> 16) & 0xFF) / 255
+                let g = CGFloat((int >> 8) & 0xFF) / 255
+                let b = CGFloat(int & 0xFF) / 255
+                let cs = cropped.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+                let ctx = CGContext(data: nil, width: fw, height: fh, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                if let ctx = ctx {
+                    ctx.setFillColor(CGColor(srgbRed: r, green: g, blue: b, alpha: 1))
+                    ctx.fill(CGRect(x: 0, y: 0, width: fw, height: fh))
+                    let dx = (fw - cropped.width) / 2
+                    let dy = (fh - cropped.height) / 2
+                    ctx.draw(cropped, in: CGRect(x: dx, y: dy, width: cropped.width, height: cropped.height))
+                    if let padded = ctx.makeImage() { cropped = padded }
+                }
+            }
+        }
 
         let spritesDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("ImageViewer").appendingPathComponent("Sprites")
@@ -327,73 +356,7 @@ struct ImagePreview: View {
         guard let data = bitmap.representation(using: .png, properties: [:]) else { return }
         try? data.write(to: url)
 
-        AnimationStore.shared.addImage(url.path)
+        store.addImage(url.path)
     }
 
-    struct SelectionOverlay: View {
-        let rect: CGRect
-        let selectionColor: Color
-        let isFixedSize: Bool
-        let onCopy: () -> Void
-        let onClear: () -> Void
-        let onColorChange: (Color) -> Void
-        let onAddSprite: () -> Void
-
-        var body: some View {
-            ZStack {
-                Rectangle().fill(selectionColor.opacity(0.2))
-                Rectangle().stroke(style: StrokeStyle(lineWidth: 2, dash: [6, 4])).foregroundColor(selectionColor)
-                
-                if !isFixedSize {
-                    Group {
-                        node().position(x: 0, y: 0)
-                        node().position(x: rect.width / 2, y: 0)
-                        node().position(x: rect.width, y: 0)
-                        
-                        node().position(x: 0, y: rect.height / 2)
-                        node().position(x: rect.width, y: rect.height / 2)
-                        
-                        node().position(x: 0, y: rect.height)
-                        node().position(x: rect.width / 2, y: rect.height)
-                        node().position(x: rect.width, y: rect.height)
-                    }
-                }
-            }
-            .allowsHitTesting(false)
-            .frame(width: max(0, rect.width), height: max(0, rect.height))
-            .overlay(alignment: .bottom) {
-                HStack(spacing: 24) {   //Popup-Stack
-                    Button(action: onCopy) { Image(systemName: "doc.on.doc").font(.system(size: 20)) }
-                        .buttonStyle(.plain)
-                    
-                    Button(action: onAddSprite) { Image(systemName: "square.grid.3x3").font(.system(size: 20)) }
-                        .buttonStyle(.plain)
-                    
-                    ColorPicker("", selection: Binding(
-                        get: { selectionColor },
-                        set: { onColorChange($0) }
-                    ))
-                    .labelsHidden()
-                    .frame(width: 16, height: 16)
-                    
-                    Button(action: onClear) { Image(systemName: "xmark").font(.system(size: 12)) }
-                        .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(selectionColor.opacity(0.9))
-                .foregroundColor(.white)
-                .cornerRadius(6)
-                .fixedSize()
-                .offset(y: 38)
-            }
-            .offset(x: rect.minX, y: rect.minY) 
-        }
-        
-        private func node() -> some View {
-            Rectangle()
-                .fill(Color.white)
-                .frame(width: 12, height: 12)
-                .border(selectionColor, width: 2)
-        }
-    }
 }

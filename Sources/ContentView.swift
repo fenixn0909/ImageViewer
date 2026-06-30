@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var store: ImageStore
-    @StateObject private var settings = SettingsManager.shared
+    @ObservedObject private var settings = SettingsManager.shared
     @State private var isTargeted = false
     @State private var errorToShow: ImageLoadError?
     @State private var zoomPercent: Int = 100
@@ -48,6 +48,7 @@ struct ContentView: View {
             Button("") { navigateToNext() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
             Button("") { zoomIn() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
             Button("") { zoomOut() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
+            Button("") { AnimationPanelController.shared.toggle() }.keyboardShortcut("a", modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -88,8 +89,8 @@ struct ContentView: View {
                 Divider().frame(height: 16)
                 Toggle("Keep Zoom", isOn: $settings.keepZoom).toggleStyle(.checkbox)
                 Spacer()
-                Button("Animation") { AnimationPanelController.shared.toggle() }
                 Button("Clear All") { store.clearAll() }
+                Button("Animation") { AnimationPanelController.shared.toggle() }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Color(nsColor: .controlBackgroundColor))

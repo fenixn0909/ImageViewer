@@ -81,12 +81,14 @@ final class AnimationStore: ObservableObject {
     @Published var animations: [AnimationData] = []
     @Published var selectedAnimationId: UUID?
 
-    private var saveURL: URL {
+    private let appSupportDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("ImageViewer")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("animations.json")
-    }
+        return dir
+    }()
+
+    private var saveURL: URL { appSupportDir.appendingPathComponent("animations.json") }
 
     private init() { load() }
 
@@ -175,14 +177,16 @@ private func imageSize(at path: String) -> CGSize? {
 
 struct AnimationContentView: View {
     @State private var animName: String = ""
-    @StateObject private var animStore = AnimationStore.shared
-    @StateObject private var imageStore = ImageStore.shared
+    @ObservedObject private var animStore = AnimationStore.shared
+    @ObservedObject private var imageStore = ImageStore.shared
     @AppStorage("animLoop") private var loopEnabled = true
     @AppStorage("animPingPong") private var pingPongEnabled = false
     @AppStorage("animSpeed") private var speedText = "1"
     @State private var selectedFrameIndex = 0
     @State private var frameWidthText: String = ""
     @State private var frameHeightText: String = ""
+    @FocusState private var animNameFocused: Bool
+    @State private var animBgColor: Color = .black
 
     private var selectedAnimBinding: Binding<AnimationData>? {
         animStore.selectedAnimationBinding
@@ -193,7 +197,9 @@ struct AnimationContentView: View {
             HStack(spacing: 8) {
                 Text("New Anim:").font(.headline)
                 TextField("", text: $animName).textFieldStyle(.roundedBorder)
-                Button(action: { animStore.add(name: animName); animName = "" }) {
+                    .focused($animNameFocused)
+                    .onSubmit { animNameFocused = false; animStore.add(name: animName); animName = "" }
+                Button(action: { animNameFocused = false; animStore.add(name: animName); animName = "" }) {
                     Image(systemName: "plus").font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.plain)
@@ -220,12 +226,7 @@ struct AnimationContentView: View {
                     TextField("px", text: $frameHeightText)
                         .textFieldStyle(.roundedBorder).frame(width: 50)
                         .onSubmit { applyFrameSize() }
-                    if let binding = selectedAnimBinding {
-                        ColorPicker("Bg", selection: Binding(
-                            get: { Color(hex: binding.wrappedValue.bgColorHex) ?? .black },
-                            set: { binding.wrappedValue.bgColorHex = $0.toHex(); animStore.save() }
-                        )).labelsHidden().frame(width: 24)
-                    }
+                    ColorPicker("Bg", selection: $animBgColor).frame(width: 30)
                     Spacer()
                 }
                 .padding(.horizontal, 8).padding(.vertical, 2)
@@ -244,7 +245,7 @@ struct AnimationContentView: View {
                     .buttonStyle(.plain)
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { animStore.selectedAnimationId = anim.id }
+                .onTapGesture { saveBgColor(); animStore.selectedAnimationId = anim.id }
                 .listRowBackground(anim.id == animStore.selectedAnimationId ? Color.accentColor.opacity(0.3) : Color.clear)
             }
             .listStyle(.plain)
@@ -291,8 +292,29 @@ struct AnimationContentView: View {
         .onChange(of: animStore.selectedAnimationId) { _ in
             syncFrameSizeText()
             selectedFrameIndex = 0
+            if let anim = animStore.selectedAnimation {
+                animBgColor = Color(hex: anim.bgColorHex) ?? .black
+            }
         }
-        .onAppear { syncFrameSizeText() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)
+            .compactMap { $0.object as? NSWindow }
+            .filter { $0 === NSColorPanel.shared }) { _ in saveBgColor() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in saveBgColor() }
+        .onAppear {
+            syncFrameSizeText()
+            if let anim = animStore.selectedAnimation {
+                animBgColor = Color(hex: anim.bgColorHex) ?? .black
+            }
+            DispatchQueue.main.async { animNameFocused = false }
+        }
+    }
+
+    private func saveBgColor() {
+        guard let binding = selectedAnimBinding else { return }
+        var d = binding.wrappedValue
+        d.bgColorHex = animBgColor.toHex()
+        binding.wrappedValue = d
+        animStore.save()
     }
 
     private func syncFrameSizeText() {
@@ -322,10 +344,14 @@ struct AnimationContentView: View {
             Button("") { nextFrame() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
             Button("") { previousAnimation() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
             Button("") { nextAnimation() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
-            Button("") { nudgeOffset(dx: -1, dy: 0) }.keyboardShortcut("j", modifiers: []).opacity(0)
-            Button("") { nudgeOffset(dx: 1, dy: 0) }.keyboardShortcut("l", modifiers: []).opacity(0)
-            Button("") { nudgeOffset(dx: 0, dy: -1) }.keyboardShortcut("i", modifiers: []).opacity(0)
-            Button("") { nudgeOffset(dx: 0, dy: 1) }.keyboardShortcut("k", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: -1, dy: 0, step: 1) }.keyboardShortcut("j", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: 1, dy: 0, step: 1) }.keyboardShortcut("l", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: 0, dy: -1, step: 1) }.keyboardShortcut("i", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: 0, dy: 1, step: 1) }.keyboardShortcut("k", modifiers: []).opacity(0)
+            Button("") { nudgeOffset(dx: -1, dy: 0, step: 10) }.keyboardShortcut("j", modifiers: [.shift]).opacity(0)
+            Button("") { nudgeOffset(dx: 1, dy: 0, step: 10) }.keyboardShortcut("l", modifiers: [.shift]).opacity(0)
+            Button("") { nudgeOffset(dx: 0, dy: -1, step: 10) }.keyboardShortcut("i", modifiers: [.shift]).opacity(0)
+            Button("") { nudgeOffset(dx: 0, dy: 1, step: 10) }.keyboardShortcut("k", modifiers: [.shift]).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -342,6 +368,7 @@ struct AnimationContentView: View {
 
     private func previousAnimation() {
         guard !animStore.animations.isEmpty else { return }
+        saveBgColor()
         let ids = animStore.animations.map(\.id)
         if let current = animStore.selectedAnimationId, let idx = ids.firstIndex(of: current) {
             animStore.selectedAnimationId = ids[(idx - 1 + ids.count) % ids.count]
@@ -352,6 +379,7 @@ struct AnimationContentView: View {
 
     private func nextAnimation() {
         guard !animStore.animations.isEmpty else { return }
+        saveBgColor()
         let ids = animStore.animations.map(\.id)
         if let current = animStore.selectedAnimationId, let idx = ids.firstIndex(of: current) {
             animStore.selectedAnimationId = ids[(idx + 1) % ids.count]
@@ -360,10 +388,10 @@ struct AnimationContentView: View {
         }
     }
 
-    private func nudgeOffset(dx: CGFloat, dy: CGFloat) {
+    private func nudgeOffset(dx: CGFloat, dy: CGFloat, step: CGFloat = 1) {
         guard let binding = selectedAnimBinding else { return }
-        binding.wrappedValue.offsetX += dx
-        binding.wrappedValue.offsetY += dy
+        binding.wrappedValue.offsetX += dx * step
+        binding.wrappedValue.offsetY += dy * step
         animStore.save()
     }
 
@@ -391,7 +419,7 @@ struct AnimPreview: View {
     @GestureState private var dragOffset: CGFloat = 0
     private var displayHeight: CGFloat { max(60, min(500, CGFloat(previewHeightDouble) + dragOffset)) }
     private let baseInterval: TimeInterval = 0.08
-    private let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
+    @State private var timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
     private var parsedSpeed: Double {
         max(0.1, Double(speedText) ?? 1)
@@ -405,19 +433,43 @@ struct AnimPreview: View {
                 let path = paths[clampedIndex]
                 let useWidth = anim.frameWidth > 0 ? anim.frameWidth : nil
                 let useHeight = anim.frameHeight > 0 ? anim.frameHeight : nil
+                let cropMode = useWidth != nil
                 let bgColor = Color(hex: anim.bgColorHex) ?? .black
                 if let nsImage = loadImage(path: path) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .scaleEffect(zoomLevel)
-                        .frame(maxWidth: useWidth, maxHeight: useHeight)
-                        .frame(maxWidth: .infinity)
+                    let imageContent = Group {
+                        if cropMode, let w = useWidth, let h = useHeight {
+                            let ox = anim.offsetX.truncatingRemainder(dividingBy: w)
+                            let oy = anim.offsetY.truncatingRemainder(dividingBy: h)
+                            let wx = ox >= 0 ? ox : ox + w
+                            let wy = oy >= 0 ? oy : oy + h
+                            let tile = {
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .frame(width: w, height: h)
+                            }
+                            ZStack {
+                                tile().offset(x: wx, y: wy)
+                                tile().offset(x: wx - w, y: wy)
+                                tile().offset(x: wx, y: wy - h)
+                                tile().offset(x: wx - w, y: wy - h)
+                            }
+                            .frame(width: w, height: h)
+                            .clipped()
+                            .scaleEffect(zoomLevel)
+                        } else {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .scaleEffect(zoomLevel)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    imageContent
                         .background(bgColor)
                         .cornerRadius(6)
                         .frame(height: displayHeight)
                         .clipped()
-                        .offset(x: anim.offsetX, y: anim.offsetY)
+                        .offset(x: 0, y: 0)
                         .gesture(MagnificationGesture()
                             .onChanged { zoomLevel = max(0.5, min(10, lastZoomLevel * $0)) }
                             .onEnded { _ in lastZoomLevel = zoomLevel })
@@ -432,11 +484,17 @@ struct AnimPreview: View {
                         .updating($dragOffset) { value, state, _ in state = value.translation.height }
                         .onEnded { previewHeightDouble = Double(max(60, min(500, CGFloat(previewHeightDouble) + $0.translation.height))) })
 
-                Button(action: togglePlay) {
-                    Text(isPlaying ? "Stop" : "Play").font(.caption)
+                HStack(spacing: 8) {
+                    Button(action: togglePlay) {
+                        Text(isPlaying ? "Stop" : "Play").font(.caption)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button("Stitch") { stitchAndShow() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             } else {
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(Color.gray.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6]))
@@ -485,6 +543,57 @@ struct AnimPreview: View {
             } else {
                 selectedFrameIndex = next
             }
+        }
+    }
+
+    private func stitchAndShow() {
+        guard let anim = animStore.selectedAnimation, !anim.imagePaths.isEmpty else { return }
+        guard let stripe = stripeImage() else { return }
+        StripePanelController(stripeImage: stripe).showWindow(nil)
+    }
+
+    private func stripeImage() -> NSImage? {
+        guard let anim = animStore.selectedAnimation else { return nil }
+        let images: [NSImage] = anim.imagePaths.compactMap { path in
+            if let item = imageStore.getItemByPath(path) { return item.image }
+            return NSImage(contentsOfFile: path)
+        }
+        guard !images.isEmpty else { return nil }
+        let w = anim.frameWidth
+        let h = anim.frameHeight
+        if w > 0, h > 0 {
+            let ox = anim.offsetX.truncatingRemainder(dividingBy: w)
+            let oy = anim.offsetY.truncatingRemainder(dividingBy: h)
+            let wx = ox >= 0 ? ox : ox + w
+            let wy = oy >= 0 ? oy : oy + h
+            let result = NSImage(size: NSSize(width: w * CGFloat(images.count), height: h))
+            result.lockFocus()
+            for (i, img) in images.enumerated() {
+                let x = CGFloat(i) * w
+                let rects = [
+                    NSRect(x: x + wx, y: -wy, width: w, height: h),
+                    NSRect(x: x + wx - w, y: -wy, width: w, height: h),
+                    NSRect(x: x + wx, y: -wy - h, width: w, height: h),
+                    NSRect(x: x + wx - w, y: -wy - h, width: w, height: h),
+                ]
+                for rect in rects {
+                    img.draw(in: rect, from: NSRect(origin: .zero, size: img.size), operation: .copy, fraction: 1)
+                }
+            }
+            result.unlockFocus()
+            return result
+        } else {
+            let totalW = images.reduce(0) { $0 + Int($1.size.width) }
+            let maxH = images.reduce(0) { max($0, Int($1.size.height)) }
+            let result = NSImage(size: NSSize(width: totalW, height: maxH))
+            result.lockFocus()
+            var x: CGFloat = 0
+            for img in images {
+                img.draw(in: NSRect(x: x, y: 0, width: img.size.width, height: img.size.height))
+                x += img.size.width
+            }
+            result.unlockFocus()
+            return result
         }
     }
 

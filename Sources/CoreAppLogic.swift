@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 // MARK: - Image Utilities
 
 private let maxImageDimension: CGFloat = 4096
-private let thumbnailPixelSize = 240
+private let thumbnailPixelSize = 100
 
 func downsampleImage(at url: URL, maxPixelSize: Int) -> NSImage? {
     let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
@@ -139,12 +139,14 @@ final class ImageStore: ObservableObject {
     @Published var selectedImageId: UUID?
     @Published var lastError: ImageLoadError?
 
-    private var pathsURL: URL {
+    private let appSupportDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("ImageViewer")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("paths.json")
-    }
+        return dir
+    }()
+
+    private var pathsURL: URL { appSupportDir.appendingPathComponent("paths.json") }
 
     private init() {
         loadPaths()
@@ -246,7 +248,7 @@ extension Color {
     init?(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
+        guard Scanner(string: hex).scanHexInt64(&int) else { return nil }
         let a, r, g, b: UInt64
         switch hex.count {
         case 3: (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
