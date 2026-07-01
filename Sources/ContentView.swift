@@ -7,29 +7,38 @@ struct ContentView: View {
     @State private var isTargeted = false
     @State private var errorToShow: ImageLoadError?
     @State private var zoomPercent: Int = 100
+    @State private var selectedTab = 0
 
-    var selectedImage: ImageItem? { store.getSelectedImage() }
+    var displayItem: ImageItem? { store.previewItem ?? store.getSelectedImage() }
 
     var body: some View {
         VStack(spacing: 0) {
             toolbarView
             
             HSplitView {
-                GallerySidebar(store: store)
-                    .frame(minWidth: 120, maxWidth: 200)
+                VStack(spacing: 0) {
+                    tabBar
+
+                    if selectedTab == 0 {
+                        FileBrowserView()
+                    } else {
+                        GallerySidebar(store: store)
+                    }
+                }
+                .frame(minWidth: 150, maxWidth: 320)
 
                 ZStack {
-                    if let item = selectedImage {
+                    if let item = displayItem {
                         ImagePreview(item: item, onZoomChange: { zoomPercent = $0 })
                     } else {
                         emptyStateView
                     }
                 }
-                .frame(minWidth: 400, minHeight: 300)
+                .frame(minWidth: 360, minHeight: 220)
             }
             .frame(maxHeight: .infinity)
 
-            FileInfoBar(item: selectedImage, zoomPercent: selectedImage != nil ? zoomPercent : nil)
+            FileInfoBar(item: displayItem, zoomPercent: displayItem != nil ? zoomPercent : nil)
         }
         .onReceive(store.$lastError) { error in errorToShow = error }
         .alert("Error", isPresented: .init(get: { errorToShow != nil }, set: { if !$0 { errorToShow = nil } })) {
@@ -38,6 +47,48 @@ struct ContentView: View {
         .background(arrowKeyButtons)
         .onAppear {
             _ = AnimationPanelController.shared
+            setupTabKeyMonitor()
+        }
+        .onChange(of: store.selectedImageId) { _ in
+            store.clearPreview()
+        }
+        .onChange(of: selectedTab) { newTab in
+            if newTab == 1 { store.clearPreview() }
+        }
+    }
+
+    @ViewBuilder
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(title: "Browser", tab: 0)
+            tabButton(title: "Gallery", tab: 1)
+            Spacer()
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(Rectangle().frame(height: 1).foregroundColor(Color(nsColor: .separatorColor)), alignment: .bottom)
+    }
+
+    private func tabButton(title: String, tab: Int) -> some View {
+        Button(action: { selectedTab = tab }) {
+            Text(title)
+                .font(.system(size: 11, weight: selectedTab == tab ? .semibold : .regular))
+                .foregroundColor(selectedTab == tab ? .white : .primary)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(selectedTab == tab ? Color.accentColor : Color.clear)
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+        .padding(4)
+    }
+
+    private func setupTabKeyMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 48 else { return event }
+            if let textView = NSApp.keyWindow?.firstResponder as? NSTextView, textView.isEditable {
+                return event
+            }
+            selectedTab = selectedTab == 0 ? 1 : 0
+            return nil
         }
     }
 

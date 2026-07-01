@@ -138,6 +138,7 @@ final class ImageStore: ObservableObject {
     @Published var images: [ImageItem] = []
     @Published var selectedImageId: UUID?
     @Published var lastError: ImageLoadError?
+    @Published var previewItem: ImageItem?
 
     private let appSupportDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -177,6 +178,14 @@ final class ImageStore: ObservableObject {
     func isDuplicate(_ path: String) -> Bool { images.contains(where: { $0.filePath == path }) }
     func getSelectedImage() -> ImageItem? { images.first { $0.id == selectedImageId } }
     func getItemByPath(_ path: String) -> ImageItem? { images.first { $0.filePath == path } }
+
+    func setPreview(image: NSImage, path: String) {
+        previewItem = ImageItem(image: image, thumbnail: nil, filePath: path)
+    }
+
+    func clearPreview() {
+        previewItem = nil
+    }
 
     @objc private func savePaths() {
         let paths = images.map(\.filePath).filter { !$0.hasPrefix("clipboard") && !$0.hasPrefix("dropped") }

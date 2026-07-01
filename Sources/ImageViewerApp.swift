@@ -33,7 +33,7 @@ struct ImageViewerApp: App {
                 }
                 .keyboardShortcut("w", modifiers: .command)
             }
-            
+
             CommandGroup(replacing: .pasteboard) {
                 Button("Select All") {
                     NotificationCenter.default.post(name: .selectAll, object: nil)
@@ -49,7 +49,7 @@ struct ImageViewerApp: App {
                     NotificationCenter.default.post(name: .copySelection, object: nil)
                 }
                 .keyboardShortcut("c", modifiers: .command)
-                
+
                 Divider()
                 
                 Button("Paste Image") {
