@@ -541,7 +541,7 @@ struct AnimationContentView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let stripe = makeStripeImage(for: seq, imageStore: imageStore) else {
             let alert = NSAlert()
-            alert.messageText = "Could not generate stitched image."
+            alert.messageText = "Could not generate merged image."
             alert.runModal()
             return
         }
@@ -658,7 +658,7 @@ struct AnimPreview: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
 
-                    Button(action: stitchAndShow) {     // btn-stitch('m')
+                    Button(action: mergeAndShow) {     // btn-merge('m')
                         Image(systemName: "arrow.up.right.and.arrow.down.left.square.fill")
                             .font(.system(size: 14))
                     }
@@ -683,7 +683,7 @@ struct AnimPreview: View {
             HStack(spacing: 0) {
                 Button("") { togglePlay() }.keyboardShortcut(.return, modifiers: [])
                 Button("") { togglePlay() }.keyboardShortcut(.space, modifiers: [])
-                Button("") { stitchAndShow() }.keyboardShortcut("m", modifiers: [])
+                Button("") { mergeAndShow() }.keyboardShortcut("m", modifiers: [])
                 Button("") {
                     AnimationPanelController.shared.window?.orderOut(nil)
                     if let mainWin = NSApplication.shared.windows.first(where: { $0.title == "Image Viewer" }) {
@@ -776,7 +776,7 @@ struct AnimPreview: View {
         }
     }
 
-    private func stitchAndShow() {
+    private func mergeAndShow() {
         guard let _seq = seqStore.selectedSequence, !_seq.frames.isEmpty else { return }
         guard let stripe = stripeImage() else { return }
         StripePanelController(stripeImage: stripe).showWindow(nil)

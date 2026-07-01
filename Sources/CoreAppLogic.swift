@@ -71,18 +71,18 @@ actor ImageLoader {
     static let shared = ImageLoader()
     private init() {}
 
-    func loadAndSend(url: URL) async {
+    func loadAndSend(url: URL, to store: ImageStore) async {
         if url.hasDirectoryPath {
-            await loadFolder(url)
+            await loadFolder(url, to: store)
         } else {
-            await loadFile(url)
+            await loadFile(url, to: store)
         }
     }
 
-    private func loadFile(_ url: URL) async {
+    private func loadFile(_ url: URL, to store: ImageStore) async {
         guard isImageFile(url) else { return }
         let path = url.path
-        let isDup = await MainActor.run { ImageStore.shared.isDuplicate(path) }
+        let isDup = await MainActor.run { store.isDuplicate(path) }
         guard !isDup else { return }
 
         guard FileManager.default.fileExists(atPath: path) else {
@@ -97,17 +97,17 @@ actor ImageLoader {
 
         let thumbnail = downsampleImage(at: url, maxPixelSize: thumbnailPixelSize)
         await MainActor.run {
-            ImageStore.shared.addImage(image, thumbnail: thumbnail, path: path)
+            store.addImage(image, thumbnail: thumbnail, path: path)
         }
     }
 
-    private func loadFolder(_ url: URL) async {
+    private func loadFolder(_ url: URL, to store: ImageStore) async {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: url, includingPropertiesForKeys: [.contentTypeKey], options: [.skipsHiddenFiles]
         ) else { return }
 
         for fileURL in contents.sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }) {
-            if isImageFile(fileURL) { await loadFile(fileURL) }
+            if isImageFile(fileURL) { await loadFile(fileURL, to: store) }
         }
     }
 
@@ -134,12 +134,12 @@ struct ImageItem: Identifiable, Equatable {
 
 @MainActor
 final class ImageStore: ObservableObject {
-    static let shared = ImageStore()
+    static let shared = ImageStore(loadPersisted: true, persistentName: "g1")
     @Published var images: [ImageItem] = []
     @Published var selectedImageId: UUID?
     @Published var lastError: ImageLoadError?
-    @Published var previewItem: ImageItem?
 
+    private let persistentName: String?
     private let appSupportDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("ImageViewer")
@@ -147,10 +147,23 @@ final class ImageStore: ObservableObject {
         return dir
     }()
 
-    private var pathsURL: URL { appSupportDir.appendingPathComponent("paths.json") }
+    private var pathsURL: URL {
+        if let name = persistentName {
+            appSupportDir.appendingPathComponent("paths-\(name).json")
+        } else {
+            appSupportDir.appendingPathComponent("paths.json")
+        }
+    }
 
-    private init() {
+    init(persistentName: String?) {
+        self.persistentName = persistentName
         loadPaths()
+        NotificationCenter.default.addObserver(self, selector: #selector(savePaths), name: NSApplication.willTerminateNotification, object: nil)
+    }
+
+    private init(loadPersisted: Bool, persistentName: String?) {
+        self.persistentName = persistentName
+        if loadPersisted { loadPaths() }
         NotificationCenter.default.addObserver(self, selector: #selector(savePaths), name: NSApplication.willTerminateNotification, object: nil)
     }
 
@@ -179,14 +192,6 @@ final class ImageStore: ObservableObject {
     func getSelectedImage() -> ImageItem? { images.first { $0.id == selectedImageId } }
     func getItemByPath(_ path: String) -> ImageItem? { images.first { $0.filePath == path } }
 
-    func setPreview(image: NSImage, path: String) {
-        previewItem = ImageItem(image: image, thumbnail: nil, filePath: path)
-    }
-
-    func clearPreview() {
-        previewItem = nil
-    }
-
     @objc private func savePaths() {
         let paths = images.map(\.filePath).filter { !$0.hasPrefix("clipboard") && !$0.hasPrefix("dropped") }
         guard let data = try? JSONEncoder().encode(paths) else { return }
@@ -194,12 +199,24 @@ final class ImageStore: ObservableObject {
     }
 
     private func loadPaths() {
+        migrateIfNeeded()
         guard let data = try? Data(contentsOf: pathsURL),
               let paths = try? JSONDecoder().decode([String].self, from: data) else { return }
         for path in paths {
             guard FileManager.default.fileExists(atPath: path) else { continue }
-            Task { await ImageLoader.shared.loadAndSend(url: URL(fileURLWithPath: path)) }
+            Task { await ImageLoader.shared.loadAndSend(url: URL(fileURLWithPath: path), to: self) }
         }
+    }
+
+    private func migrateIfNeeded() {
+        let old = appSupportDir.appendingPathComponent("paths.json")
+        guard FileManager.default.fileExists(atPath: old.path) else { return }
+        let new = pathsURL
+        guard !FileManager.default.fileExists(atPath: new.path) else {
+            try? FileManager.default.removeItem(at: old)
+            return
+        }
+        try? FileManager.default.moveItem(at: old, to: new)
     }
 }
 
@@ -244,6 +261,22 @@ final class SettingsManager: ObservableObject {
         gridStrokeWidth = defaults.string(forKey: "gridStrokeWidth") ?? "1"
         gridOffsetX = defaults.double(forKey: "gridOffsetX")
         gridOffsetY = defaults.double(forKey: "gridOffsetY")
+    }
+}
+
+// MARK: - Preview Store
+
+@MainActor
+final class PreviewStore: ObservableObject {
+    static let shared = PreviewStore()
+    @Published var previewItem: ImageItem?
+
+    func setPreview(image: NSImage, path: String) {
+        previewItem = ImageItem(image: image, thumbnail: nil, filePath: path)
+    }
+
+    func clearPreview() {
+        previewItem = nil
     }
 }
 

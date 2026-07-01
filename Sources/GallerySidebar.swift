@@ -16,13 +16,13 @@ struct GallerySidebar: View {
                 VStack { Spacer(); Text("No images").foregroundColor(.secondary).font(.caption); Spacer() }
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 60))], spacing: 8) {
                         ForEach(store.images) { item in
                             ThumbnailView(
                                 image: item.thumbnail ?? item.image,
                                 isSelected: store.selectedImageId == item.id,
                                 onRemove: { store.removeImage(item.id) }
-                            ).onTapGesture { store.selectedImageId = item.id }
+                            ).onTapGesture { store.selectedImageId = item.id; PreviewStore.shared.clearPreview() }
                         }
                     }.padding(8)
                 }.frame(maxHeight: .infinity)
@@ -40,13 +40,13 @@ struct GallerySidebar: View {
         for provider in providers {
             if provider.canLoadObject(ofClass: URL.self) {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url = url { Task { await ImageLoader.shared.loadAndSend(url: url) } }
+                    if let url = url { Task { await ImageLoader.shared.loadAndSend(url: url, to: store) } }
                 }
                 handled = true
             } else if provider.canLoadObject(ofClass: NSImage.self) {
                 _ = provider.loadObject(ofClass: NSImage.self) { image, _ in
                     if let image = image as? NSImage {
-                        Task { @MainActor in ImageStore.shared.addImage(image, thumbnail: nil, path: "dropped-\(UUID().uuidString)") }
+                        Task { @MainActor in store.addImage(image, thumbnail: nil, path: "dropped-\(UUID().uuidString)") }
                     }
                 }
                 handled = true

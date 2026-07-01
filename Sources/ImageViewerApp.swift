@@ -3,12 +3,10 @@ import SwiftUI
 
 @main
 struct ImageViewerApp: App {
-    @StateObject private var store = ImageStore.shared
-    
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(store)
+                .environmentObject(GalleryManager.shared)
                 .frame(minWidth: 800, minHeight: 400)
                 .onAppear {
                     if let window = NSApplication.shared.windows.first {
@@ -59,8 +57,8 @@ struct ImageViewerApp: App {
                 
                 Divider()
                 
-                Button("Clear All") {
-                    ImageStore.shared.clearAll()
+                Button("Clear Gallery") {
+                    GalleryManager.shared.activeStore.clearAll()
                 }
             }
         }
@@ -78,7 +76,7 @@ struct ImageViewerApp: App {
             guard response == .OK else { return }
             for url in panel.urls {
                 Task {
-                    await ImageLoader.shared.loadAndSend(url: url)
+                    await ImageLoader.shared.loadAndSend(url: url, to: GalleryManager.shared.activeStore)
                 }
             }
         }
@@ -89,11 +87,11 @@ struct ImageViewerApp: App {
         let pasteboard = NSPasteboard.general
         if let fileURLs = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !fileURLs.isEmpty {
             for url in fileURLs {
-                Task { await ImageLoader.shared.loadAndSend(url: url) }
+                Task { await ImageLoader.shared.loadAndSend(url: url, to: GalleryManager.shared.activeStore) }
             }
         } else if let image = NSImage(pasteboard: pasteboard) {
             let path = "clipboard-\(UUID().uuidString)"
-            ImageStore.shared.addImage(image, thumbnail: nil, path: path)
+            GalleryManager.shared.activeStore.addImage(image, thumbnail: nil, path: path)
         }
     }
 }

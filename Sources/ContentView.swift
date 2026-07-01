@@ -2,14 +2,22 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @EnvironmentObject private var store: ImageStore
+    @EnvironmentObject private var galleryManager: GalleryManager
     @ObservedObject private var settings = SettingsManager.shared
+    @ObservedObject private var previewStore = PreviewStore.shared
     @State private var isTargeted = false
     @State private var errorToShow: ImageLoadError?
     @State private var zoomPercent: Int = 100
-    @State private var selectedTab = 0
+    @State private var showDeleteConfirm = false
 
-    var displayItem: ImageItem? { store.previewItem ?? store.getSelectedImage() }
+    private var store: ImageStore { galleryManager.activeStore }
+    var displayItem: ImageItem? {
+        if galleryManager.selectedTab == 0 {
+            previewStore.previewItem
+        } else {
+            galleryManager.galleries[galleryManager.selectedTab - 1].getSelectedImage()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,13 +27,14 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     tabBar
 
-                    if selectedTab == 0 {
+                    if galleryManager.selectedTab == 0 {
                         FileBrowserView()
                     } else {
-                        GallerySidebar(store: store)
+                        let galleryIndex = galleryManager.selectedTab - 1
+                        GallerySidebar(store: galleryManager.galleries[galleryIndex])
                     }
                 }
-                .frame(minWidth: 150, maxWidth: 320)
+                .frame(minWidth: 150, maxWidth: 360)
 
                 ZStack {
                     if let item = displayItem {
@@ -44,37 +53,73 @@ struct ContentView: View {
         .alert("Error", isPresented: .init(get: { errorToShow != nil }, set: { if !$0 { errorToShow = nil } })) {
             Text(errorToShow?.localizedDescription ?? "Unknown error")
         }
+        .alert("Delete Gallery", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) { executeGalleryRemoval() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let last = galleryManager.galleries.last {
+                Text("Delete \(galleryManager.galleryName(at: galleryManager.galleries.count - 1))? It contains \(last.images.count) image(s).")
+            }
+        }
         .background(arrowKeyButtons)
         .onAppear {
             _ = AnimationPanelController.shared
             setupTabKeyMonitor()
         }
-        .onChange(of: store.selectedImageId) { _ in
-            store.clearPreview()
-        }
-        .onChange(of: selectedTab) { newTab in
-            if newTab == 1 { store.clearPreview() }
+        .onChange(of: galleryManager.selectedTab) { newTab in
+            if newTab != 0 { PreviewStore.shared.clearPreview() }
         }
     }
 
     @ViewBuilder
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            tabButton(title: "Browser", tab: 0)
-            tabButton(title: "Gallery", tab: 1)
-            Spacer()
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                tabButton(title: "Browser", tab: 0)
+
+                ForEach(galleryManager.galleries.indices, id: \.self) { i in
+                    tabButton(title: galleryManager.galleryName(at: i), tab: i + 1)
+                }
+
+                Button(action: { confirmRemoveGallery() }) {    // btn-rmvGll
+                    Image(systemName: "minus")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle()) // <-- Makes the whole padded area clickable
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .disabled(!galleryManager.canRemove)
+
+                Button(action: { galleryManager.addGallery() }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle()) // <-- Makes the whole padded area clickable
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .disabled(!galleryManager.canAdd)
+
+                Spacer()
+            }
+            .padding(.trailing, 8)
         }
         .background(Color(nsColor: .controlBackgroundColor))
         .overlay(Rectangle().frame(height: 1).foregroundColor(Color(nsColor: .separatorColor)), alignment: .bottom)
     }
 
     private func tabButton(title: String, tab: Int) -> some View {
-        Button(action: { selectedTab = tab }) {
+        Button(action: { galleryManager.selectedTab = tab }) {
             Text(title)
-                .font(.system(size: 11, weight: selectedTab == tab ? .semibold : .regular))
-                .foregroundColor(selectedTab == tab ? .white : .primary)
+                .font(.system(size: 11, weight: galleryManager.selectedTab == tab ? .semibold : .regular))
+                .foregroundColor(galleryManager.selectedTab == tab ? .white : .primary)
                 .padding(.horizontal, 12).padding(.vertical, 5)
-                .background(selectedTab == tab ? Color.accentColor : Color.clear)
+                .background(galleryManager.selectedTab == tab ? Color.accentColor : Color.clear)
                 .cornerRadius(4)
         }
         .buttonStyle(.plain)
@@ -87,8 +132,22 @@ struct ContentView: View {
             if let textView = NSApp.keyWindow?.firstResponder as? NSTextView, textView.isEditable {
                 return event
             }
-            selectedTab = selectedTab == 0 ? 1 : 0
+            let maxTab = galleryManager.galleries.count
+            galleryManager.selectedTab = galleryManager.selectedTab >= maxTab ? 0 : galleryManager.selectedTab + 1
             return nil
+        }
+    }
+
+    private func executeGalleryRemoval() {
+        galleryManager.removeLastGallery()
+    }
+
+    private func confirmRemoveGallery() {
+        guard galleryManager.canRemove, let last = galleryManager.galleries.last else { return }
+        if !last.images.isEmpty {
+            showDeleteConfirm = true
+        } else {
+            executeGalleryRemoval()
         }
     }
 
@@ -141,7 +200,7 @@ struct ContentView: View {
                 Divider().frame(height: 16)
                 Toggle("Keep Zoom", isOn: $settings.keepZoom).toggleStyle(.checkbox)
                 Spacer()
-                Button("Clear All") { store.clearAll() }
+                Button("Clear Gallery") { store.clearAll() }
                 Button(action: { ConvertPanelController().showWindow(nil) }) {    // btn-ATA
                     Image(systemName: "film.stack.fill").font(.system(size: 14))
                 }
@@ -210,13 +269,13 @@ struct ContentView: View {
         for provider in providers {
             if provider.canLoadObject(ofClass: URL.self) {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url = url { Task { await ImageLoader.shared.loadAndSend(url: url) } }
+                    if let url = url { Task { await ImageLoader.shared.loadAndSend(url: url, to: store) } }
                 }
                 handled = true
             } else if provider.canLoadObject(ofClass: NSImage.self) {
                 _ = provider.loadObject(ofClass: NSImage.self) { image, _ in
                     if let image = image as? NSImage {
-                        Task { @MainActor in ImageStore.shared.addImage(image, thumbnail: nil, path: "dropped-\(UUID().uuidString)") }
+                        Task { @MainActor in store.addImage(image, thumbnail: nil, path: "dropped-\(UUID().uuidString)") }
                     }
                 }
                 handled = true

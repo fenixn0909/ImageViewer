@@ -1,9 +1,11 @@
 import SwiftUI
 
 struct FileBrowserView: View {
-    @EnvironmentObject var store: ImageStore
+    @EnvironmentObject var galleryManager: GalleryManager
     @State private var currentURL = FileManager.default.homeDirectoryForCurrentUser
     @State private var entries: [FileEntry] = []
+    @State private var selectedFileIds: Set<UUID> = []
+    @State private var lastSelectedId: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,19 +38,27 @@ struct FileBrowserView: View {
                             Spacer()
                         }
                         .padding(.horizontal, 8).padding(.vertical, 6)
+                        .background(selectedFileIds.contains(entry.id) ? Color.accentColor.opacity(0.5) : Color.clear)
+                        .overlay(selectedFileIds.contains(entry.id) ? Rectangle().frame(width: 3).foregroundColor(.accentColor) : nil, alignment: .leading)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            if entry.isDirectory {
-                                currentURL = entry.url
-                                loadEntries()
-                            } else {
-                                loadImage(entry)
-                            }
+                            handleTap(entry: entry)
                         }
                         .contextMenu {
                             if !entry.isDirectory {
-                                Button("Add To Gallery") {
-                                    Task { await ImageLoader.shared.loadAndSend(url: entry.url) }
+                                let targets = selectedFileIds.contains(entry.id) ? selectedFileIds : [entry.id]
+                                Menu("Add To Gallery (\(targets.count))") {
+                                    ForEach(galleryManager.galleries.indices, id: \.self) { i in
+                                        Button(galleryManager.galleryName(at: i)) {
+                                            for id in targets {
+                                                if let e = entries.first(where: { $0.id == id }) {
+                                                    Task {
+                                                        await ImageLoader.shared.loadAndSend(url: e.url, to: galleryManager.galleries[i])
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -67,6 +77,39 @@ struct FileBrowserView: View {
         }
         .onChange(of: currentURL) { newURL in
             UserDefaults.standard.set(newURL.path, forKey: "fileBrowserLastPath")
+        }
+    }
+
+    private func handleTap(entry: FileEntry) {
+        let shift = NSEvent.modifierFlags.contains(.shift)
+        let cmd = NSEvent.modifierFlags.contains(.command)
+
+        if shift, let lastId = lastSelectedId {
+            if let curIdx = entries.firstIndex(where: { $0.id == entry.id }),
+               let lastIdx = entries.firstIndex(where: { $0.id == lastId }) {
+                let range = min(lastIdx, curIdx)...max(lastIdx, curIdx)
+                selectedFileIds = Set(entries[range].map(\.id))
+            }
+        } else if cmd {
+            if selectedFileIds.contains(entry.id) {
+                selectedFileIds.remove(entry.id)
+            } else {
+                selectedFileIds.insert(entry.id)
+            }
+        } else {
+            selectedFileIds = [entry.id]
+        }
+        lastSelectedId = entry.id
+
+        if entry.isDirectory {
+            if !shift && !cmd {
+                currentURL = entry.url
+                selectedFileIds.removeAll()
+                lastSelectedId = nil
+                loadEntries()
+            }
+        } else {
+            loadImage(entry)
         }
     }
 
@@ -95,15 +138,18 @@ struct FileBrowserView: View {
 
     private func goBack() {
         currentURL = currentURL.deletingLastPathComponent()
+        selectedFileIds.removeAll()
+        lastSelectedId = nil
         loadEntries()
     }
 
     private func loadImage(_ entry: FileEntry) {
         let path = entry.url.path
         guard FileManager.default.fileExists(atPath: path) else { return }
-        if let existing = store.getItemByPath(path) {
-            store.selectedImageId = existing.id
-            store.clearPreview()
+        let activeStore = galleryManager.activeStore
+        if let existing = activeStore.getItemByPath(path) {
+            activeStore.selectedImageId = existing.id
+            PreviewStore.shared.clearPreview()
             return
         }
         Task {
@@ -112,7 +158,7 @@ struct FileBrowserView: View {
             }.value
             if let image = image {
                 await MainActor.run {
-                    store.setPreview(image: image, path: path)
+                    PreviewStore.shared.setPreview(image: image, path: path)
                 }
             }
         }
