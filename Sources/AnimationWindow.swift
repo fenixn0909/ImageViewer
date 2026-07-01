@@ -60,19 +60,19 @@ final class AnimationPanelController: NSWindowController {
     }
 }
 
-// MARK: - Animation Model
+// MARK: - Sequence Model
 
-struct AnimFrame: Codable, Identifiable, Equatable {
+struct SeqFrame: Codable, Identifiable, Equatable {
     var id = UUID()
     var path: String
     var offsetX: CGFloat = 0
     var offsetY: CGFloat = 0
 }
 
-struct AnimationData: Codable, Identifiable, Equatable {
+struct SequenceData: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
-    var frames: [AnimFrame] = []
+    var frames: [SeqFrame] = []
     var frameWidth: CGFloat = 0
     var frameHeight: CGFloat = 0
     var bgColorHex: String = "#000000"
@@ -95,12 +95,12 @@ struct AnimationData: Codable, Identifiable, Equatable {
         bgColorHex = try container.decodeIfPresent(String.self, forKey: .bgColorHex) ?? "#000000"
         transparentBg = try container.decodeIfPresent(Bool.self, forKey: .transparentBg) ?? false
 
-        if let loadedFrames = try container.decodeIfPresent([AnimFrame].self, forKey: .frames) {
+        if let loadedFrames = try container.decodeIfPresent([SeqFrame].self, forKey: .frames) {
             frames = loadedFrames
         } else if let legacyPaths = try container.decodeIfPresent([String].self, forKey: .imagePaths) {
             let oldOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .offsetX) ?? 0
             let oldOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .offsetY) ?? 0
-            frames = legacyPaths.map { AnimFrame(path: $0, offsetX: oldOffsetX, offsetY: oldOffsetY) }
+            frames = legacyPaths.map { SeqFrame(path: $0, offsetX: oldOffsetX, offsetY: oldOffsetY) }
         }
     }
 
@@ -116,13 +116,13 @@ struct AnimationData: Codable, Identifiable, Equatable {
     }
 }
 
-// MARK: - Animation Store
+// MARK: - Sequence Store
 
 @MainActor
-final class AnimationStore: ObservableObject {
-    static let shared = AnimationStore()
-    @Published var animations: [AnimationData] = []
-    @Published var selectedAnimationId: UUID?
+final class SeqStore: ObservableObject {
+    static let shared = SeqStore()
+    @Published var sequences: [SequenceData] = []
+    @Published var selectedSequenceId: UUID?
 
     private let appSupportDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -131,86 +131,86 @@ final class AnimationStore: ObservableObject {
         return dir
     }()
 
-    private var saveURL: URL { appSupportDir.appendingPathComponent("animations.json") }
+    private var saveURL: URL { appSupportDir.appendingPathComponent("sequences.json") }
 
     private init() { load() }
 
     func add(name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !animations.contains(where: { $0.name == trimmed }) else { return }
-        let anim = AnimationData(name: trimmed)
-        animations.append(anim)
-        if selectedAnimationId == nil { selectedAnimationId = anim.id }
+        guard !trimmed.isEmpty, !sequences.contains(where: { $0.name == trimmed }) else { return }
+        let _seq = SequenceData(name: trimmed)
+        sequences.append(_seq)
+        if selectedSequenceId == nil { selectedSequenceId = _seq.id }
         save()
     }
 
     func remove(_ id: UUID) {
-        animations.removeAll { $0.id == id }
-        if selectedAnimationId == id { selectedAnimationId = animations.first?.id }
+        sequences.removeAll { $0.id == id }
+        if selectedSequenceId == id { selectedSequenceId = sequences.first?.id }
         save()
     }
 
     func addImage(_ path: String) {
-        guard let id = selectedAnimationId, let idx = animations.firstIndex(where: { $0.id == id }),
-              !animations[idx].frames.contains(where: { $0.path == path }) else { return }
-        let wasEmpty = animations[idx].frames.isEmpty
-        animations[idx].frames.append(AnimFrame(path: path))
+        guard let id = selectedSequenceId, let idx = sequences.firstIndex(where: { $0.id == id }),
+              !sequences[idx].frames.contains(where: { $0.path == path }) else { return }
+        let wasEmpty = sequences[idx].frames.isEmpty
+        sequences[idx].frames.append(SeqFrame(path: path))
         if wasEmpty, let size = imageSize(at: path) {
-            animations[idx].frameWidth = size.width
-            animations[idx].frameHeight = size.height
+            sequences[idx].frameWidth = size.width
+            sequences[idx].frameHeight = size.height
         }
         save()
     }
 
-    func removeImage(_ path: String, from animationId: UUID) {
-        guard let idx = animations.firstIndex(where: { $0.id == animationId }) else { return }
-        animations[idx].frames.removeAll { $0.path == path }
+    func removeImage(_ path: String, from sequenceId: UUID) {
+        guard let idx = sequences.firstIndex(where: { $0.id == sequenceId }) else { return }
+        sequences[idx].frames.removeAll { $0.path == path }
         save()
     }
 
-    var selectedAnimation: AnimationData? {
-        guard let id = selectedAnimationId else { return nil }
-        return animations.first { $0.id == id }
+    var selectedSequence: SequenceData? {
+        guard let id = selectedSequenceId else { return nil }
+        return sequences.first { $0.id == id }
     }
 
-    var selectedAnimationIndex: Int? {
-        guard let id = selectedAnimationId else { return nil }
-        return animations.firstIndex(where: { $0.id == id })
+    var selectedSequenceIndex: Int? {
+        guard let id = selectedSequenceId else { return nil }
+        return sequences.firstIndex(where: { $0.id == id })
     }
 
-    var selectedAnimationBinding: Binding<AnimationData>? {
-        guard let id = selectedAnimationId else { return nil }
-        guard animations.contains(where: { $0.id == id }) else { return nil }
+    var selectedSequenceBinding: Binding<SequenceData>? {
+        guard let id = selectedSequenceId else { return nil }
+        guard sequences.contains(where: { $0.id == id }) else { return nil }
         return Binding(
-            get: { self.animations.first(where: { $0.id == id }) ?? AnimationData(name: "") },
+            get: { self.sequences.first(where: { $0.id == id }) ?? SequenceData(name: "") },
             set: { newValue in
-                guard let idx = self.animations.firstIndex(where: { $0.id == id }) else { return }
-                self.animations[idx] = newValue
+                guard let idx = self.sequences.firstIndex(where: { $0.id == id }) else { return }
+                self.sequences[idx] = newValue
                 self.save()
             }
         )
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(animations) else { return }
+        guard let data = try? JSONEncoder().encode(sequences) else { return }
         try? data.write(to: saveURL)
-        if let id = selectedAnimationId {
-            UserDefaults.standard.set(id.uuidString, forKey: "animSelectedId")
+        if let id = selectedSequenceId {
+            UserDefaults.standard.set(id.uuidString, forKey: "seqSelectedId")
         } else {
-            UserDefaults.standard.removeObject(forKey: "animSelectedId")
+            UserDefaults.standard.removeObject(forKey: "seqSelectedId")
         }
     }
 
     private func load() {
         guard let data = try? Data(contentsOf: saveURL),
-              let decoded = try? JSONDecoder().decode([AnimationData].self, from: data) else { return }
-        animations = decoded
-        if let idStr = UserDefaults.standard.string(forKey: "animSelectedId"),
+              let decoded = try? JSONDecoder().decode([SequenceData].self, from: data) else { return }
+        sequences = decoded
+        if let idStr = UserDefaults.standard.string(forKey: "seqSelectedId"),
            let id = UUID(uuidString: idStr),
-           animations.contains(where: { $0.id == id }) {
-            selectedAnimationId = id
+           sequences.contains(where: { $0.id == id }) {
+            selectedSequenceId = id
         } else {
-            selectedAnimationId = animations.first?.id
+            selectedSequenceId = sequences.first?.id
         }
     }
 }
@@ -224,8 +224,8 @@ private func imageSize(at path: String) -> CGSize? {
 // MARK: - Animation Content View
 
 struct AnimationContentView: View {
-    @State private var animName: String = ""
-    @ObservedObject private var animStore = AnimationStore.shared
+    @State private var seqName: String = ""
+    @ObservedObject private var seqStore = SeqStore.shared
     @ObservedObject private var imageStore = ImageStore.shared
     @AppStorage("animLoop") private var loopEnabled = true
     @AppStorage("animPingPong") private var pingPongEnabled = false
@@ -233,29 +233,29 @@ struct AnimationContentView: View {
     @State private var selectedFrameIndex = 0
     @State private var frameWidthText: String = ""
     @State private var frameHeightText: String = ""
-    @FocusState private var animNameFocused: Bool
+    @FocusState private var seqNameFocused: Bool
     @FocusState private var previewFocused: Bool
-    @State private var animBgColor: Color = .black
+    @State private var seqBgColor: Color = .black
     @State private var transparentBg: Bool = false
     @State private var prevAnimId: UUID?
     @State private var thumbnailCache: [String: NSImage] = [:]
 
-    private var selectedAnimBinding: Binding<AnimationData>? {
-        animStore.selectedAnimationBinding
+    private var selectedSeqBinding: Binding<SequenceData>? {
+        seqStore.selectedSequenceBinding
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("New Anim:").font(.headline)
-                TextField("", text: $animName).textFieldStyle(.roundedBorder)
-                    .focused($animNameFocused)
-                    .onSubmit { animNameFocused = false; animStore.add(name: animName); animName = "" }
-                Button(action: { animNameFocused = false; animStore.add(name: animName); animName = "" }) {
+                Text("New Seq:").font(.headline)
+                TextField("", text: $seqName).textFieldStyle(.roundedBorder)
+                    .focused($seqNameFocused)
+                    .onSubmit { seqNameFocused = false; seqStore.add(name: seqName); seqName = "" }
+                Button(action: { seqNameFocused = false; seqStore.add(name: seqName); seqName = "" }) {
                     Image(systemName: "plus").font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .disabled(animName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(seqName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal).padding(.top, 8)
 
@@ -268,7 +268,7 @@ struct AnimationContentView: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 2)
 
-            if let _ = animStore.selectedAnimation {
+            if let _ = seqStore.selectedSequence {
                 HStack(spacing: 8) {
                     Text("W:").font(.caption).foregroundColor(.secondary)
                     TextField("px", text: $frameWidthText)
@@ -278,7 +278,7 @@ struct AnimationContentView: View {
                     TextField("px", text: $frameHeightText)
                         .textFieldStyle(.roundedBorder).frame(width: 50)
                         .onSubmit { applyFrameSize() }
-                    ColorPicker("Bg", selection: $animBgColor).frame(width: 30)
+                    ColorPicker("Bg", selection: $seqBgColor).frame(width: 30)
                     Spacer()
                     Toggle("Transparent", isOn: $transparentBg).toggleStyle(.checkbox).font(.caption)
                 }
@@ -293,46 +293,46 @@ struct AnimationContentView: View {
                 .padding(.horizontal, 8)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    animNameFocused = false
+                    seqNameFocused = false
                     previewFocused = true
                 }
 
-                AnimPreview(animStore: animStore, imageStore: imageStore, loopEnabled: $loopEnabled, pingPongEnabled: $pingPongEnabled, speedText: $speedText, selectedFrameIndex: $selectedFrameIndex)
+                AnimPreview(seqStore: seqStore, imageStore: imageStore, loopEnabled: $loopEnabled, pingPongEnabled: $pingPongEnabled, speedText: $speedText, selectedFrameIndex: $selectedFrameIndex)
                     .padding(.horizontal, 8)
             }
             .padding(.vertical, 4)
             .focusable()
             .focused($previewFocused)
 
-            List(animStore.animations, selection: $animStore.selectedAnimationId) { anim in
+            List(seqStore.sequences, selection: $seqStore.selectedSequenceId) { seq0 in
                 HStack {
-                    Text(anim.name).font(.body)
+                    Text(seq0.name).font(.body)
                     Spacer()
                     Button(role: .destructive) {
-                        animStore.remove(anim.id)
+                        seqStore.remove(seq0.id)
                     } label: {
                         Image(systemName: "xmark.circle.fill").font(.system(size: 14))
                     }
                     .buttonStyle(.plain)
                 }
                 .contentShape(Rectangle())
-                .tag(anim.id)
+                .tag(seq0.id)
             }
             .listStyle(.plain)
 
             Divider()
 
             HStack(spacing: 4) {
-                Text(animStore.selectedAnimation?.name ?? "No anim selected").font(.caption).foregroundColor(.secondary)
+                Text(seqStore.selectedSequence?.name ?? "No seq selected").font(.caption).foregroundColor(.secondary)
                 Spacer()
             }
             .padding(.horizontal, 8).padding(.top, 4)
 
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 6) {
-                    if let anim = animStore.selectedAnimation {
-                        ForEach(Array(anim.frames.enumerated()), id: \.element.id) { index, frame in
-                            if let nsImage = loadWrappedThumbnail(frame: frame, w: anim.frameWidth, h: anim.frameHeight) {
+                    if let _seq = seqStore.selectedSequence {
+                        ForEach(Array(_seq.frames.enumerated()), id: \.element.id) { index, frame in
+                            if let nsImage = loadWrappedThumbnail(frame: frame, w: _seq.frameWidth, h: _seq.frameHeight) {
                                 ZStack(alignment: .topTrailing) {
                                     Button {
                                         selectedFrameIndex = index
@@ -354,7 +354,7 @@ struct AnimationContentView: View {
                                         .cornerRadius(3)
                                         .offset(x: 3, y: 3)
 
-                                    Button(action: { removeFrame(at: frame.path, from: anim.id) }) {
+                                    Button(action: { removeFrame(at: frame.path, from: _seq.id) }) {
                                         Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundColor(.white)
                                             .background(Circle().fill(Color.red).frame(width: 10, height: 10))
                                     }
@@ -371,7 +371,7 @@ struct AnimationContentView: View {
         }
         .frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
         .overlay(animKeyboardButtons)
-        .onChange(of: animStore.selectedAnimationId) { newId in
+        .onChange(of: seqStore.selectedSequenceId) { newId in
             if let prev = prevAnimId, prev != newId {
                 saveBgColor(for: prev)
             }
@@ -379,16 +379,16 @@ struct AnimationContentView: View {
             syncFrameSizeText()
             selectedFrameIndex = 0
             thumbnailCache.removeAll()
-            if let anim = animStore.selectedAnimation {
-                animBgColor = Color(hex: anim.bgColorHex) ?? .black
-                transparentBg = anim.transparentBg
+            if let _seq = seqStore.selectedSequence {
+                seqBgColor = Color(hex: _seq.bgColorHex) ?? .black
+                transparentBg = _seq.transparentBg
             }
         }
-        .onChange(of: animBgColor) { _ in saveBgColor() }
+        .onChange(of: seqBgColor) { _ in saveBgColor() }
         .onChange(of: transparentBg) { _ in
-            guard let id = animStore.selectedAnimationId, let idx = animStore.animations.firstIndex(where: { $0.id == id }) else { return }
-            animStore.animations[idx].transparentBg = transparentBg
-            animStore.save()
+            guard let id = seqStore.selectedSequenceId, let idx = seqStore.sequences.firstIndex(where: { $0.id == id }) else { return }
+            seqStore.sequences[idx].transparentBg = transparentBg
+            seqStore.save()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notif in
             if let win = notif.object as? NSWindow, win.title == "Animation" {
@@ -398,25 +398,25 @@ struct AnimationContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in saveBgColor() }
         .onAppear {
             syncFrameSizeText()
-            if let anim = animStore.selectedAnimation {
-                animBgColor = Color(hex: anim.bgColorHex) ?? .black
-                transparentBg = anim.transparentBg
+            if let _seq = seqStore.selectedSequence {
+                seqBgColor = Color(hex: _seq.bgColorHex) ?? .black
+                transparentBg = _seq.transparentBg
             }
-            DispatchQueue.main.async { animNameFocused = false }
+            DispatchQueue.main.async { seqNameFocused = false }
         }
     }
 
-    private func saveBgColor(for animId: UUID? = nil) {
-        let id = animId ?? animStore.selectedAnimationId
-        guard let id = id, let idx = animStore.animations.firstIndex(where: { $0.id == id }) else { return }
-        animStore.animations[idx].bgColorHex = animBgColor.toHex()
-        animStore.save()
+    private func saveBgColor(for seqId: UUID? = nil) {
+        let id = seqId ?? seqStore.selectedSequenceId
+        guard let id = id, let idx = seqStore.sequences.firstIndex(where: { $0.id == id }) else { return }
+        seqStore.sequences[idx].bgColorHex = seqBgColor.toHex()
+        seqStore.save()
     }
 
     private func syncFrameSizeText() {
-        if let anim = animStore.selectedAnimation {
-            frameWidthText = anim.frameWidth > 0 ? "\(Int(anim.frameWidth))" : ""
-            frameHeightText = anim.frameHeight > 0 ? "\(Int(anim.frameHeight))" : ""
+        if let _seq = seqStore.selectedSequence {
+            frameWidthText = _seq.frameWidth > 0 ? "\(Int(_seq.frameWidth))" : ""
+            frameHeightText = _seq.frameHeight > 0 ? "\(Int(_seq.frameHeight))" : ""
         } else {
             frameWidthText = ""
             frameHeightText = ""
@@ -424,12 +424,12 @@ struct AnimationContentView: View {
     }
 
     private func applyFrameSize() {
-        guard let binding = selectedAnimBinding else { return }
+        guard let binding = selectedSeqBinding else { return }
         let w = max(1, Int(frameWidthText) ?? Int(binding.wrappedValue.frameWidth))
         let h = max(1, Int(frameHeightText) ?? Int(binding.wrappedValue.frameHeight))
         binding.wrappedValue.frameWidth = CGFloat(w)
         binding.wrappedValue.frameHeight = CGFloat(h)
-        animStore.save()
+        seqStore.save()
         syncFrameSizeText()
     }
 
@@ -448,62 +448,62 @@ struct AnimationContentView: View {
             Button("") { nudgeOffset(dx: 1, dy: 0, step: 10) }.keyboardShortcut("l", modifiers: [.shift]).opacity(0)
             Button("") { nudgeOffset(dx: 0, dy: -1, step: 10) }.keyboardShortcut("i", modifiers: [.shift]).opacity(0)
             Button("") { nudgeOffset(dx: 0, dy: 1, step: 10) }.keyboardShortcut("k", modifiers: [.shift]).opacity(0)
-            Button("") { animNameFocused = false }.keyboardShortcut(.escape, modifiers: []).opacity(0)
+            Button("") { seqNameFocused = false }.keyboardShortcut(.escape, modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
         .allowsHitTesting(false)
     }
 
     private func previousFrame() {
-        guard let anim = animStore.selectedAnimation, !anim.frames.isEmpty else { return }
-        selectedFrameIndex = (selectedFrameIndex - 1 + anim.frames.count) % anim.frames.count
+        guard let _seq = seqStore.selectedSequence, !_seq.frames.isEmpty else { return }
+        selectedFrameIndex = (selectedFrameIndex - 1 + _seq.frames.count) % _seq.frames.count
     }
 
     private func nextFrame() {
-        guard let anim = animStore.selectedAnimation, !anim.frames.isEmpty else { return }
-        selectedFrameIndex = (selectedFrameIndex + 1) % anim.frames.count
+        guard let _seq = seqStore.selectedSequence, !_seq.frames.isEmpty else { return }
+        selectedFrameIndex = (selectedFrameIndex + 1) % _seq.frames.count
     }
 
     private func previousAnimation() {
-        guard !animStore.animations.isEmpty else { return }
+        guard !seqStore.sequences.isEmpty else { return }
         saveBgColor()
-        let ids = animStore.animations.map(\.id)
-        if let current = animStore.selectedAnimationId, let idx = ids.firstIndex(of: current) {
-            animStore.selectedAnimationId = ids[(idx - 1 + ids.count) % ids.count]
+        let ids = seqStore.sequences.map(\.id)
+        if let current = seqStore.selectedSequenceId, let idx = ids.firstIndex(of: current) {
+            seqStore.selectedSequenceId = ids[(idx - 1 + ids.count) % ids.count]
         } else {
-            animStore.selectedAnimationId = ids[0]
+            seqStore.selectedSequenceId = ids[0]
         }
     }
 
     private func nextAnimation() {
-        guard !animStore.animations.isEmpty else { return }
+        guard !seqStore.sequences.isEmpty else { return }
         saveBgColor()
-        let ids = animStore.animations.map(\.id)
-        if let current = animStore.selectedAnimationId, let idx = ids.firstIndex(of: current) {
-            animStore.selectedAnimationId = ids[(idx + 1) % ids.count]
+        let ids = seqStore.sequences.map(\.id)
+        if let current = seqStore.selectedSequenceId, let idx = ids.firstIndex(of: current) {
+            seqStore.selectedSequenceId = ids[(idx + 1) % ids.count]
         } else {
-            animStore.selectedAnimationId = ids[0]
+            seqStore.selectedSequenceId = ids[0]
         }
     }
 
     private func defocusAll() {
-        animNameFocused = false
+        seqNameFocused = false
         previewFocused = true
         NSApp.keyWindow?.makeFirstResponder(nil)
     }
 
     private func nudgeOffset(dx: CGFloat, dy: CGFloat, step: CGFloat = 1) {
-        guard let binding = selectedAnimBinding else { return }
+        guard let binding = selectedSeqBinding else { return }
         guard selectedFrameIndex >= 0 && selectedFrameIndex < binding.wrappedValue.frames.count else { return }
         binding.wrappedValue.frames[selectedFrameIndex].offsetX += dx * step
         binding.wrappedValue.frames[selectedFrameIndex].offsetY += dy * step
-        animStore.save()
+        seqStore.save()
     }
 
-    private func removeFrame(at path: String, from animationId: UUID) {
-        let anim = animStore.animations.first(where: { $0.id == animationId })
-        let oldCount = anim?.frames.count ?? 0
-        animStore.removeImage(path, from: animationId)
+    private func removeFrame(at path: String, from sequenceId: UUID) {
+        let _seq = seqStore.sequences.first(where: { $0.id == sequenceId })
+        let oldCount = _seq?.frames.count ?? 0
+        seqStore.removeImage(path, from: sequenceId)
         selectedFrameIndex = min(selectedFrameIndex, max(0, oldCount - 2))
     }
 
@@ -514,7 +514,7 @@ struct AnimationContentView: View {
         return NSImage(contentsOfFile: path)
     }
 
-    private func loadWrappedThumbnail(frame: AnimFrame, w: CGFloat, h: CGFloat) -> NSImage? {
+    private func loadWrappedThumbnail(frame: SeqFrame, w: CGFloat, h: CGFloat) -> NSImage? {
         let rawImage = loadThumbnail(path: frame.path)
         guard let img = rawImage, w > 0, h > 0 else { return rawImage }
         let cacheKey = "\(frame.path)_\(w)_\(h)_\(frame.offsetX)_\(frame.offsetY)_thumb"
@@ -544,7 +544,7 @@ struct AnimationContentView: View {
 }
 
 struct AnimPreview: View {
-    @ObservedObject var animStore: AnimationStore
+    @ObservedObject var seqStore: SeqStore
     @ObservedObject var imageStore: ImageStore
     @Binding var loopEnabled: Bool
     @Binding var pingPongEnabled: Bool
@@ -568,14 +568,14 @@ struct AnimPreview: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if let anim = animStore.selectedAnimation, !anim.frames.isEmpty {
-                let frames = anim.frames
+            if let _seq = seqStore.selectedSequence, !_seq.frames.isEmpty {
+                let frames = _seq.frames
                 let clampedIndex = min(selectedFrameIndex, frames.count - 1)
                 let frame = frames[clampedIndex]
-                let bgColor = Color(hex: anim.bgColorHex) ?? .black
+                let bgColor = Color(hex: _seq.bgColorHex) ?? .black
                 if let nsImage = loadImage(path: frame.path) {
-                    let useWidth = anim.frameWidth > 0 ? anim.frameWidth : nil
-                    let useHeight = anim.frameHeight > 0 ? anim.frameHeight : nil
+                    let useWidth = _seq.frameWidth > 0 ? _seq.frameWidth : nil
+                    let useHeight = _seq.frameHeight > 0 ? _seq.frameHeight : nil
                     let displayImage = makeDisplayImage(nsImage, path: frame.path, w: useWidth, h: useHeight, offsetX: frame.offsetX, offsetY: frame.offsetY)
                     Image(nsImage: displayImage)
                         .resizable()
@@ -609,7 +609,10 @@ struct AnimPreview: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
 
-                    Button("Stitch") { stitchAndShow() }
+                    Button(action: stitchAndShow) {     // btn-stitch('m')
+                        Image(systemName: "arrow.up.right.and.arrow.down.left.square.fill")
+                            .font(.system(size: 14))
+                    }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }
@@ -627,7 +630,7 @@ struct AnimPreview: View {
             }
             .opacity(0).frame(width: 0, height: 0).allowsHitTesting(false)
         )
-        .onChange(of: animStore.selectedAnimationId) { _ in
+        .onChange(of: seqStore.selectedSequenceId) { _ in
             isPlaying = false
             selectedFrameIndex = 0
             direction = 1
@@ -673,26 +676,26 @@ struct AnimPreview: View {
     }
 
     private func stitchAndShow() {
-        guard let anim = animStore.selectedAnimation, !anim.frames.isEmpty else { return }
+        guard let _seq = seqStore.selectedSequence, !_seq.frames.isEmpty else { return }
         guard let stripe = stripeImage() else { return }
         StripePanelController(stripeImage: stripe).showWindow(nil)
     }
 
     private func stripeImage() -> NSImage? {
-        guard let anim = animStore.selectedAnimation else { return nil }
-        let frames = anim.frames
+        guard let _seq = seqStore.selectedSequence else { return nil }
+        let frames = _seq.frames
         guard !frames.isEmpty else { return nil }
 
-        let w = anim.frameWidth
-        let h = anim.frameHeight
+        let w = _seq.frameWidth
+        let h = _seq.frameHeight
 
         if w > 0, h > 0 {
             let totalSize = NSSize(width: w * CGFloat(frames.count), height: h)
             let result = NSImage(size: totalSize)
             result.lockFocus()
 
-            if !anim.transparentBg, let ctx = NSGraphicsContext.current?.cgContext {
-                let hex = anim.bgColorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            if !_seq.transparentBg, let ctx = NSGraphicsContext.current?.cgContext {
+                let hex = _seq.bgColorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
                 var int: UInt64 = 0
                 Scanner(string: hex).scanHexInt64(&int)
                 let r = CGFloat((int >> 16) & 0xFF) / 255

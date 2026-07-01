@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 struct GallerySidebar: View {
     @ObservedObject var store: ImageStore
-    @Binding var isTargeted: Bool
+    @State private var sidebarDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,8 +27,32 @@ struct GallerySidebar: View {
                     }.padding(8)
                 }.frame(maxHeight: .infinity)
             }
-            DropAddButton(isTargeted: $isTargeted)
-        }.background(Color(nsColor: .windowBackgroundColor))
+            DropAddButton(isTargeted: $sidebarDropTargeted)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .onDrop(of: [.fileURL, .image], isTargeted: $sidebarDropTargeted) { providers in
+            handleSidebarDrop(providers: providers)
+        }
+    }
+
+    private func handleSidebarDrop(providers: [NSItemProvider]) -> Bool {
+        var handled = false
+        for provider in providers {
+            if provider.canLoadObject(ofClass: URL.self) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url = url { Task { await ImageLoader.shared.loadAndSend(url: url) } }
+                }
+                handled = true
+            } else if provider.canLoadObject(ofClass: NSImage.self) {
+                _ = provider.loadObject(ofClass: NSImage.self) { image, _ in
+                    if let image = image as? NSImage {
+                        Task { @MainActor in ImageStore.shared.addImage(image, thumbnail: nil, path: "dropped-\(UUID().uuidString)") }
+                    }
+                }
+                handled = true
+            }
+        }
+        return handled
     }
 }
 
@@ -44,17 +68,7 @@ struct DropAddButton: View {
         .background(RoundedRectangle(cornerRadius: 8).strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6]))
             .foregroundColor(isTargeted ? .blue : .gray.opacity(0.5)))
         .background(RoundedRectangle(cornerRadius: 8).fill(isTargeted ? Color.blue.opacity(0.1) : Color.clear))
-        .padding(8).contentShape(Rectangle())
-        .onDrop(of: [.fileURL, .image], isTargeted: $isTargeted) { providers in
-            for provider in providers {
-                if provider.canLoadObject(ofClass: URL.self) {
-                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                        if let url = url { Task { await ImageLoader.shared.loadAndSend(url: url) } }
-                    }
-                }
-            }
-            return true
-        }
+        .padding(8)
     }
 }
 

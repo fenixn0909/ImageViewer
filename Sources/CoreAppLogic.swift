@@ -156,11 +156,7 @@ final class ImageStore: ObservableObject {
     func addImage(_ image: NSImage, thumbnail: NSImage?, path: String) {
         guard !images.contains(where: { $0.filePath == path }) else { return }
         let item = ImageItem(image: image, thumbnail: thumbnail, filePath: path)
-        let filename = URL(fileURLWithPath: path).lastPathComponent
-        let index = images.firstIndex {
-            URL(fileURLWithPath: $0.filePath).lastPathComponent.localizedStandardCompare(filename) == .orderedDescending
-        }
-        if let index = index { images.insert(item, at: index) } else { images.append(item) }
+        images.append(item)
         if selectedImageId == nil { selectedImageId = item.id }
         savePaths()
     }

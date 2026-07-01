@@ -86,6 +86,7 @@ struct ImagePreview: View {
             if !settings.keepZoom { zoomLevel = 1.0; lastZoomLevel = 1.0 }
         }
         .onChange(of: displayScale) { _ in onZoomChange(Int((displayScale * 100).rounded())) }
+        .onReceive(NotificationCenter.default.publisher(for: .selectAll)) { _ in selectAll() }
         .onReceive(NotificationCenter.default.publisher(for: .copySelection)) { _ in copySelection() }
         .onReceive(NotificationCenter.default.publisher(for: .clearSelection)) { _ in selectionRect = nil }
         .onReceive(NotificationCenter.default.publisher(for: .applyFixedSize)) { notification in
@@ -290,6 +291,10 @@ struct ImagePreview: View {
         fitScale = (imageSize.width / imageSize.height > viewSize.width / viewSize.height) ? (viewSize.width / imageSize.width) : (viewSize.height / imageSize.height)
     }
     
+    private func selectAll() {
+        selectionRect = CGRect(x: 0, y: 0, width: item.image.size.width, height: item.image.size.height)
+    }
+
     private func copySelection() {
         guard let rect = selectionRect,
               let cgImage = item.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
@@ -315,8 +320,8 @@ struct ImagePreview: View {
 
         guard var cropped = cgImage.cropping(to: pixelRect) else { return }
 
-        let store = AnimationStore.shared
-        if let anim = store.selectedAnimation, anim.frameWidth > 0, anim.frameHeight > 0 {
+        let store = SeqStore.shared
+        if let anim = store.selectedSequence, anim.frameWidth > 0, anim.frameHeight > 0 {
             let fw = Int(anim.frameWidth)
             let fh = Int(anim.frameHeight)
             if cropped.width > fw || cropped.height > fh {

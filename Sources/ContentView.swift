@@ -15,7 +15,7 @@ struct ContentView: View {
             toolbarView
             
             HSplitView {
-                GallerySidebar(store: store, isTargeted: $isTargeted)
+                GallerySidebar(store: store)
                     .frame(minWidth: 120, maxWidth: 200)
 
                 ZStack {
@@ -49,6 +49,7 @@ struct ContentView: View {
             Button("") { zoomIn() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
             Button("") { zoomOut() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
             Button("") { AnimationPanelController.shared.toggle() }.keyboardShortcut("a", modifiers: []).opacity(0)
+            Button("") { }.keyboardShortcut("q", modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -90,7 +91,15 @@ struct ContentView: View {
                 Toggle("Keep Zoom", isOn: $settings.keepZoom).toggleStyle(.checkbox)
                 Spacer()
                 Button("Clear All") { store.clearAll() }
-                Button("Animation") { AnimationPanelController.shared.toggle() }
+                Button(action: {}) {    // btn-ATA: Convert Area to Animation
+                    Image(systemName: "film.stack.fill").font(.system(size: 14))
+                }
+                Button(action: {    // btn-showAnim
+                AnimationPanelController.shared.toggle() }) {
+                    Image(systemName: "play.square.stack")
+                        .font(.system(size: 14))
+                }
+                
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Color(nsColor: .controlBackgroundColor))

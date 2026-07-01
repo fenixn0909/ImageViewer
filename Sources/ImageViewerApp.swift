@@ -35,6 +35,16 @@ struct ImageViewerApp: App {
             }
             
             CommandGroup(replacing: .pasteboard) {
+                Button("Select All") {
+                    NotificationCenter.default.post(name: .selectAll, object: nil)
+                }
+                .keyboardShortcut("a", modifiers: .command)
+
+                Button("Deselect") {
+                    NotificationCenter.default.post(name: .clearSelection, object: nil)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+
                 Button("Copy Selection") {
                     NotificationCenter.default.post(name: .copySelection, object: nil)
                 }
@@ -89,6 +99,7 @@ struct ImageViewerApp: App {
 }
 
 extension Notification.Name {
+    static let selectAll = Notification.Name("ImageViewer_SelectAll")
     static let copySelection = Notification.Name("ImageViewer_CopySelection")
     static let applyFixedSize = Notification.Name("ImageViewer_ApplyFixedSize")
     static let clearSelection = Notification.Name("ImageViewer_ClearSelection")
