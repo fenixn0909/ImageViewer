@@ -5,6 +5,7 @@ import SwiftUI
 
 final class StripePanelController: NSWindowController {
     private static var current: StripePanelController?
+    private var monitor: Any?
 
     private let stripeImage: NSImage
 
@@ -27,6 +28,19 @@ final class StripePanelController: NSWindowController {
         super.init(window: win)
         Self.current = self
         win.center()
+
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, self.window?.isVisible == true else { return event }
+            if event.keyCode == 53 {
+                self.window?.close()
+                return nil
+            }
+            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
+                copyStripeToPasteboard(self.stripeImage)
+                return nil
+            }
+            return event
+        }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -54,59 +68,10 @@ struct StripeView: View {
             .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).shadow(radius: 2))
             .padding(8)
         }
-        .background(KeyHandler(image: image))
     }
 
     private func copyImage() {
         copyStripeToPasteboard(image)
-    }
-}
-
-private struct KeyHandler: NSViewRepresentable {
-    let image: NSImage
-
-    func makeNSView(context: Context) -> NSView {
-        let v = KeyView()
-        v.nextResponder = context.coordinator
-        DispatchQueue.main.async {
-            v.window?.makeFirstResponder(v)
-        }
-        return v
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    class KeyView: NSView {
-        override var acceptsFirstResponder: Bool { true }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(image: image)
-    }
-
-    class Coordinator: NSResponder {
-        let image: NSImage
-
-        init(image: NSImage) {
-            self.image = image
-            super.init()
-        }
-
-        required init?(coder: NSCoder) { nil }
-
-        override var acceptsFirstResponder: Bool { true }
-
-        override func keyDown(with event: NSEvent) {
-            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
-                copyImage()
-            } else {
-                super.keyDown(with: event)
-            }
-        }
-
-        private func copyImage() {
-            copyStripeToPasteboard(image)
-        }
     }
 }
 
@@ -117,16 +82,14 @@ fileprivate func copyStripeToPasteboard(_ image: NSImage) {
     let w = Int(image.size.width)
     let h = Int(image.size.height)
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!
-    let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
     let flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: CGFloat(h))
-    ctx?.concatenate(flip)
-    if let cgCtx = ctx {
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: cgCtx, flipped: true)
-        image.draw(in: NSRect(origin: .zero, size: image.size))
-        NSGraphicsContext.restoreGraphicsState()
-    }
-    guard let cgImage = ctx?.makeImage() else { return }
+    ctx.concatenate(flip)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+    image.draw(in: NSRect(origin: .zero, size: image.size))
+    NSGraphicsContext.restoreGraphicsState()
+    guard let cgImage = ctx.makeImage() else { return }
     let rep = NSBitmapImageRep(cgImage: cgImage)
     guard let pngData = rep.representation(using: .png, properties: [:]) else { return }
     pb.setData(pngData, forType: .png)
