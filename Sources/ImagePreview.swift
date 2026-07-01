@@ -320,8 +320,13 @@ struct ImagePreview: View {
     }
 
     private func addSpriteFromSelection() {
-        guard let rect = selectionRect,
-              let cgImage = item.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        guard let rect = selectionRect else {
+            let alert = NSAlert()
+            alert.messageText = "No area selected. Select an area first."
+            alert.runModal()
+            return
+        }
+        guard let cgImage = item.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
 
         let sX = CGFloat(cgImage.width) / item.image.size.width
         let sY = CGFloat(cgImage.height) / item.image.size.height
@@ -331,25 +336,31 @@ struct ImagePreview: View {
         guard var cropped = cgImage.cropping(to: pixelRect) else { return }
 
         let store = SeqStore.shared
-        if let anim = store.selectedSequence, anim.frameWidth > 0, anim.frameHeight > 0 {
-            let fw = Int(anim.frameWidth)
-            let fh = Int(anim.frameHeight)
-            if cropped.width > fw || cropped.height > fh {
-                let cx = (cropped.width - fw) / 2
-                let cy = (cropped.height - fh) / 2
-                let cropRect = CGRect(x: max(0, cx), y: max(0, cy), width: fw, height: fh)
-                if let centerCropped = cropped.cropping(to: cropRect) { cropped = centerCropped }
-            } else if cropped.width < fw || cropped.height < fh {
-                let cs = cropped.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-                let ctx = CGContext(data: nil, width: fw, height: fh, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-                if let ctx = ctx {
-                    let dx = (fw - cropped.width) / 2
-                    let dy = (fh - cropped.height) / 2
-                    ctx.draw(cropped, in: CGRect(x: dx, y: dy, width: cropped.width, height: cropped.height))
-                    if let padded = ctx.makeImage() { cropped = padded }
-                }
+        guard store.selectedSequence != nil else {
+            let alert = NSAlert()
+            alert.messageText = "No sequence selected. Select a sequence in the animation window first."
+            alert.runModal()
+            return
+        }
+        guard let anim = store.selectedSequence, anim.frameWidth > 0, anim.frameHeight > 0 else { return }
+        let fw = Int(anim.frameWidth)
+        let fh = Int(anim.frameHeight)
+        if cropped.width > fw || cropped.height > fh {
+            let cx = (cropped.width - fw) / 2
+            let cy = (cropped.height - fh) / 2
+            let cropRect = CGRect(x: max(0, cx), y: max(0, cy), width: fw, height: fh)
+            if let centerCropped = cropped.cropping(to: cropRect) { cropped = centerCropped }
+        } else if cropped.width < fw || cropped.height < fh {
+            let cs = cropped.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+            let ctx = CGContext(data: nil, width: fw, height: fh, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            if let ctx = ctx {
+                let dx = (fw - cropped.width) / 2
+                let dy = (fh - cropped.height) / 2
+                ctx.draw(cropped, in: CGRect(x: dx, y: dy, width: cropped.width, height: cropped.height))
+                if let padded = ctx.makeImage() { cropped = padded }
             }
         }
+
 
         let spritesDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("ImageViewer").appendingPathComponent("Sprites")

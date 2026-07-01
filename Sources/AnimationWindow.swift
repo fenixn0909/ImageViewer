@@ -316,6 +316,10 @@ struct AnimationContentView: View {
                     .buttonStyle(.plain)
                 }
                 .contentShape(Rectangle())
+                .contextMenu {
+                    Button("Rename") { renameSequence(seq0) }
+                    Button("Export Seq") { exportSequence(seq0) }
+                }
                 .tag(seq0.id)
             }
             .listStyle(.plain)
@@ -507,6 +511,51 @@ struct AnimationContentView: View {
         selectedFrameIndex = min(selectedFrameIndex, max(0, oldCount - 2))
     }
 
+    private func renameSequence(_ seq: SequenceData) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Sequence"
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        textField.stringValue = seq.name
+        alert.accessoryView = textField
+        textField.becomeFirstResponder()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let trimmed = textField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        if seqStore.sequences.contains(where: { $0.name == trimmed && $0.id != seq.id }) {
+            let ca = NSAlert()
+            ca.messageText = "Sequence '\(trimmed)' already exists."
+            ca.runModal()
+            return
+        }
+        guard let idx = seqStore.sequences.firstIndex(where: { $0.id == seq.id }) else { return }
+        seqStore.sequences[idx].name = trimmed
+        seqStore.save()
+    }
+
+    private func exportSequence(_ seq: SequenceData) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "\(seq.name).png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let stripe = makeStripeImage(for: seq, imageStore: imageStore) else {
+            let alert = NSAlert()
+            alert.messageText = "Could not generate stitched image."
+            alert.runModal()
+            return
+        }
+        guard let tiffData = stripe.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            let alert = NSAlert()
+            alert.messageText = "Could not export image."
+            alert.runModal()
+            return
+        }
+        try? pngData.write(to: url)
+    }
+
     private func loadThumbnail(path: String) -> NSImage? {
         if let item = imageStore.getItemByPath(path) {
             return item.thumbnail ?? item.image
@@ -615,6 +664,13 @@ struct AnimPreview: View {
                     }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+
+                    Button(action: exportAllSequences) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 14))
+                    }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                 }
             } else {
                 RoundedRectangle(cornerRadius: 6)
@@ -627,6 +683,12 @@ struct AnimPreview: View {
             HStack(spacing: 0) {
                 Button("") { togglePlay() }.keyboardShortcut(.return, modifiers: [])
                 Button("") { stitchAndShow() }.keyboardShortcut("m", modifiers: [])
+                Button("") {
+                    AnimationPanelController.shared.window?.orderOut(nil)
+                    if let mainWin = NSApplication.shared.windows.first(where: { $0.title == "Image Viewer" }) {
+                        mainWin.makeKeyAndOrderFront(nil)
+                    }
+                }.keyboardShortcut("a", modifiers: [])
             }
             .opacity(0).frame(width: 0, height: 0).allowsHitTesting(false)
         )
@@ -639,6 +701,44 @@ struct AnimPreview: View {
             lastZoomLevel = 1
             displayCache.removeAll()
         }
+    }
+
+    private func exportAllSequences() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder to export all sequences"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+
+        let sequences = seqStore.sequences
+        guard !sequences.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "No sequences to export."
+            alert.runModal()
+            return
+        }
+
+        var exported = 0
+        for seq in sequences {
+            let filename = "\(seq.name).png"
+            let url = folder.appendingPathComponent(filename)
+            if FileManager.default.fileExists(atPath: url.path) { continue }
+            guard let stripe = makeStripeImage(for: seq, imageStore: imageStore),
+                  let tiffData = stripe.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData),
+                  let pngData = bitmap.representation(using: .png, properties: [:]) else { continue }
+            try? pngData.write(to: url)
+            exported += 1
+        }
+
+        let alert = NSAlert()
+        if exported == 0 {
+            alert.messageText = "All sequences already exist in the destination."
+        } else {
+            alert.messageText = "Exported \(exported) of \(sequences.count) sequences to \(folder.lastPathComponent)."
+        }
+        alert.runModal()
     }
 
     private func tick(count: Int) {
@@ -683,73 +783,7 @@ struct AnimPreview: View {
 
     private func stripeImage() -> NSImage? {
         guard let _seq = seqStore.selectedSequence else { return nil }
-        let frames = _seq.frames
-        guard !frames.isEmpty else { return nil }
-
-        let w = _seq.frameWidth
-        let h = _seq.frameHeight
-
-        if w > 0, h > 0 {
-            let totalSize = NSSize(width: w * CGFloat(frames.count), height: h)
-            let result = NSImage(size: totalSize)
-            result.lockFocus()
-
-            if !_seq.transparentBg, let ctx = NSGraphicsContext.current?.cgContext {
-                let hex = _seq.bgColorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-                var int: UInt64 = 0
-                Scanner(string: hex).scanHexInt64(&int)
-                let r = CGFloat((int >> 16) & 0xFF) / 255
-                let g = CGFloat((int >> 8) & 0xFF) / 255
-                let b = CGFloat(int & 0xFF) / 255
-                ctx.setFillColor(red: r, green: g, blue: b, alpha: 1)
-                ctx.fill(NSRect(origin: .zero, size: totalSize))
-            }
-
-            for (i, frame) in frames.enumerated() {
-                let img = loadImage(path: frame.path) ?? NSImage(contentsOfFile: frame.path)
-                guard let img = img else { continue }
-
-                let xOffset = CGFloat(i) * w
-                let ox = frame.offsetX.truncatingRemainder(dividingBy: w)
-                let oy = frame.offsetY.truncatingRemainder(dividingBy: h)
-                let wx = ox >= 0 ? ox : ox + w
-                let wy = oy >= 0 ? oy : oy + h
-
-                let targetRect = NSRect(x: xOffset, y: 0, width: w, height: h)
-
-                NSGraphicsContext.current?.saveGraphicsState()
-                NSBezierPath(rect: targetRect).addClip()
-
-                let rects = [
-                    NSRect(x: xOffset + wx, y: -wy, width: w, height: h),
-                    NSRect(x: xOffset + wx - w, y: -wy, width: w, height: h),
-                    NSRect(x: xOffset + wx, y: -wy + h, width: w, height: h),
-                    NSRect(x: xOffset + wx - w, y: -wy + h, width: w, height: h),
-                ]
-
-                for rect in rects {
-                    img.draw(in: rect, from: NSRect(origin: .zero, size: img.size), operation: .sourceOver, fraction: 1)
-                }
-
-                NSGraphicsContext.current?.restoreGraphicsState()
-            }
-
-            result.unlockFocus()
-            return result
-        } else {
-            let images = frames.compactMap { loadImage(path: $0.path) ?? NSImage(contentsOfFile: $0.path) }
-            let totalW = images.reduce(0) { $0 + Int($1.size.width) }
-            let maxH = images.reduce(0) { max($0, Int($1.size.height)) }
-            let result = NSImage(size: NSSize(width: totalW, height: maxH))
-            result.lockFocus()
-            var x: CGFloat = 0
-            for img in images {
-                img.draw(in: NSRect(x: x, y: 0, width: img.size.width, height: img.size.height))
-                x += img.size.width
-            }
-            result.unlockFocus()
-            return result
-        }
+        return makeStripeImage(for: _seq, imageStore: imageStore)
     }
 
     private func togglePlay() {
@@ -803,5 +837,80 @@ struct AnimPreview: View {
             return item.image
         }
         return NSImage(contentsOfFile: path)
+    }
+}
+
+@MainActor
+fileprivate func makeStripeImage(for seq: SequenceData, imageStore: ImageStore) -> NSImage? {
+    let frames = seq.frames
+    guard !frames.isEmpty else { return nil }
+
+    func loadImg(path: String) -> NSImage? {
+        if let item = imageStore.getItemByPath(path) { return item.image }
+        return NSImage(contentsOfFile: path)
+    }
+
+    let w = seq.frameWidth
+    let h = seq.frameHeight
+
+    if w > 0, h > 0 {
+        let totalSize = NSSize(width: w * CGFloat(frames.count), height: h)
+        let result = NSImage(size: totalSize)
+        result.lockFocus()
+
+        if !seq.transparentBg, let ctx = NSGraphicsContext.current?.cgContext {
+            let hex = seq.bgColorHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            var int: UInt64 = 0
+            Scanner(string: hex).scanHexInt64(&int)
+            let r = CGFloat((int >> 16) & 0xFF) / 255
+            let g = CGFloat((int >> 8) & 0xFF) / 255
+            let b = CGFloat(int & 0xFF) / 255
+            ctx.setFillColor(red: r, green: g, blue: b, alpha: 1)
+            ctx.fill(NSRect(origin: .zero, size: totalSize))
+        }
+
+        for (i, frame) in frames.enumerated() {
+            guard let img = loadImg(path: frame.path) else { continue }
+
+            let xOffset = CGFloat(i) * w
+            let ox = frame.offsetX.truncatingRemainder(dividingBy: w)
+            let oy = frame.offsetY.truncatingRemainder(dividingBy: h)
+            let wx = ox >= 0 ? ox : ox + w
+            let wy = oy >= 0 ? oy : oy + h
+
+            let targetRect = NSRect(x: xOffset, y: 0, width: w, height: h)
+
+            NSGraphicsContext.current?.saveGraphicsState()
+            NSBezierPath(rect: targetRect).addClip()
+
+            let rects = [
+                NSRect(x: xOffset + wx, y: -wy, width: w, height: h),
+                NSRect(x: xOffset + wx - w, y: -wy, width: w, height: h),
+                NSRect(x: xOffset + wx, y: -wy + h, width: w, height: h),
+                NSRect(x: xOffset + wx - w, y: -wy + h, width: w, height: h),
+            ]
+
+            for rect in rects {
+                img.draw(in: rect, from: NSRect(origin: .zero, size: img.size), operation: .sourceOver, fraction: 1)
+            }
+
+            NSGraphicsContext.current?.restoreGraphicsState()
+        }
+
+        result.unlockFocus()
+        return result
+    } else {
+        let images = frames.compactMap { loadImg(path: $0.path) }
+        let totalW = images.reduce(0) { $0 + Int($1.size.width) }
+        let maxH = images.reduce(0) { max($0, Int($1.size.height)) }
+        let result = NSImage(size: NSSize(width: totalW, height: maxH))
+        result.lockFocus()
+        var x: CGFloat = 0
+        for img in images {
+            img.draw(in: NSRect(x: x, y: 0, width: img.size.width, height: img.size.height))
+            x += img.size.width
+        }
+        result.unlockFocus()
+        return result
     }
 }
