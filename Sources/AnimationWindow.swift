@@ -682,6 +682,7 @@ struct AnimPreview: View {
         .overlay(
             HStack(spacing: 0) {
                 Button("") { togglePlay() }.keyboardShortcut(.return, modifiers: [])
+                Button("") { togglePlay() }.keyboardShortcut(.space, modifiers: [])
                 Button("") { stitchAndShow() }.keyboardShortcut("m", modifiers: [])
                 Button("") {
                     AnimationPanelController.shared.window?.orderOut(nil)
