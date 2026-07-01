@@ -75,7 +75,11 @@ struct ImagePreview: View {
                     .gesture(MagnificationGesture()
                         .onChanged { zoomLevel = max(0.1, min(50, lastZoomLevel * $0)) }
                         .onEnded { _ in lastZoomLevel = zoomLevel })
-                    .onAppear { updateImageFrame(imageSize: item.image.size, viewSize: geometry.size) }
+                    .onAppear {
+                        updateImageFrame(imageSize: item.image.size, viewSize: geometry.size)
+                        ATAContext.image = item.image
+                        if let rect = selectionRect { ATAContext.rect = rect }
+                    }
                     .onChange(of: geometry.size) { newSize in updateImageFrame(imageSize: item.image.size, viewSize: newSize) }
                 }
                 .background(Color(nsColor: .windowBackgroundColor))
@@ -83,7 +87,13 @@ struct ImagePreview: View {
         }
         .onChange(of: item.id) { _ in
             selectionRect = nil
+            ATAContext.image = nil
+            ATAContext.rect = nil
             if !settings.keepZoom { zoomLevel = 1.0; lastZoomLevel = 1.0 }
+        }
+        .onChange(of: selectionRect) { newRect in
+            ATAContext.image = item.image
+            ATAContext.rect = newRect
         }
         .onChange(of: displayScale) { _ in onZoomChange(Int((displayScale * 100).rounded())) }
         .onReceive(NotificationCenter.default.publisher(for: .selectAll)) { _ in selectAll() }

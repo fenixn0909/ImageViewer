@@ -49,7 +49,7 @@ struct ContentView: View {
             Button("") { zoomIn() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
             Button("") { zoomOut() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
             Button("") { AnimationPanelController.shared.toggle() }.keyboardShortcut("a", modifiers: []).opacity(0)
-            Button("") { }.keyboardShortcut("q", modifiers: []).opacity(0)
+            Button("") { ConvertPanelController().showWindow(nil) }.keyboardShortcut("q", modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -91,7 +91,7 @@ struct ContentView: View {
                 Toggle("Keep Zoom", isOn: $settings.keepZoom).toggleStyle(.checkbox)
                 Spacer()
                 Button("Clear All") { store.clearAll() }
-                Button(action: {}) {    // btn-ATA: Convert Area to Animation
+                Button(action: { ConvertPanelController().showWindow(nil) }) {    // btn-ATA
                     Image(systemName: "film.stack.fill").font(.system(size: 14))
                 }
                 Button(action: {    // btn-showAnim
