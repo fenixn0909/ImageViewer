@@ -160,6 +160,8 @@ struct ContentView: View {
             Button("") { zoomOut() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
             Button("") { AnimationPanelController.shared.toggle() }.keyboardShortcut("a", modifiers: []).opacity(0)
             Button("") { ConvertPanelController().showWindow(nil) }.keyboardShortcut("q", modifiers: []).opacity(0)
+            Button("") { settings.fixedSelectionEnabled.toggle() }.keyboardShortcut("f", modifiers: []).opacity(0)
+            Button("") { settings.showGrid.toggle() }.keyboardShortcut("g", modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
     }

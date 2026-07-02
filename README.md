@@ -81,6 +81,8 @@ A macOS image viewer designed for game sprite work. Browse, view, crop, and expo
 |---|---|
 | `←` `→` | Previous / next image |
 | `↑` `↓` | Zoom in / out |
+| `F` | Toggle fixed-size selection mode |
+| `G` | Toggle grid overlay |
 | `S` | Add sprite from selection to active animation sequence |
 | Drag | Create or resize selection |
 | Shift+drag | Constrain selection axis (horizontal/vertical) |
