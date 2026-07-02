@@ -8,6 +8,7 @@ struct SelectionOverlay: View {
     let onClear: () -> Void
     let onColorChange: (Color) -> Void
     let onAddSprite: () -> Void
+    let onExport: () -> Void
 
     var body: some View {
         ZStack {
@@ -36,7 +37,7 @@ struct SelectionOverlay: View {
                 Button(action: onCopy) { Image(systemName: "doc.on.doc").font(.system(size: 20)) }
                     .buttonStyle(.plain)
                 
-                Button(action: onAddSprite) { Image(systemName: "square.grid.3x3").font(.system(size: 20)) }
+                Button(action: onAddSprite) { Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 20)) }
                     .buttonStyle(.plain)
                 
                 ColorPicker("", selection: Binding(
@@ -45,6 +46,9 @@ struct SelectionOverlay: View {
                 ))
                 .labelsHidden()
                 .frame(width: 16, height: 16)
+                
+                Button(action: onExport) { Image(systemName: "square.and.arrow.up.fill").font(.system(size: 16)) }
+                    .buttonStyle(.plain)
                 
                 Button(action: onClear) { Image(systemName: "xmark").font(.system(size: 12)) }
                     .buttonStyle(.plain)

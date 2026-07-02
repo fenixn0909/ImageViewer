@@ -41,6 +41,16 @@ struct ImagePreview: View {
                                     .onChanged { handleGlobalDrag(value: $0) }
                                     .onEnded { _ in isSelecting = false; isDragging = false; isResizing = false; resizeEdge = .none }
                             )
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onEnded { value in
+                                        if abs(value.translation.width) < 2 && abs(value.translation.height) < 2,
+                                           let sel = selectionRect {
+                                            let tap = CGPoint(x: value.location.x / displayScale, y: value.location.y / displayScale)
+                                            if !sel.contains(tap) { selectionRect = nil }
+                                        }
+                                    }
+                            )
 
                         if settings.showGrid {
                             GridView(gridWidth: settings.parsedGridWidth, gridHeight: settings.parsedGridHeight,
@@ -62,12 +72,15 @@ struct ImagePreview: View {
                                 onCopy: copySelection,
                                 onClear: { selectionRect = nil },
                                 onColorChange: { settings.selectionColorHex = $0.toHex() },
-                                onAddSprite: addSpriteFromSelection
+                                onAddSprite: addSpriteFromSelection,
+                                onExport: exportSelection
                             )
                         }
 
                         Button("") { addSpriteFromSelection() }
                             .keyboardShortcut("s", modifiers: []).opacity(0).frame(width: 0, height: 0)
+                        Button("") { exportSelection() }
+                            .keyboardShortcut("e", modifiers: .command).opacity(0).frame(width: 0, height: 0)
                     }
                     .frame(width: max(item.image.size.width * displayScale, geometry.size.width),
                            height: max(item.image.size.height * displayScale, geometry.size.height))
@@ -372,6 +385,35 @@ struct ImagePreview: View {
         try? data.write(to: url)
 
         store.addImage(url.path)
+    }
+
+    private func exportSelection() {
+        guard let rect = selectionRect else {
+            let alert = NSAlert()
+            alert.messageText = "No area selected. Select an area first."
+            alert.runModal()
+            return
+        }
+
+        let cropped = NSImage(size: NSSize(width: rect.width, height: rect.height))
+        cropped.lockFocus()
+        let imgSize = item.image.size
+        item.image.draw(at: NSPoint(x: -rect.origin.x, y: -(imgSize.height - rect.origin.y - rect.height)),
+                        from: .zero, operation: .sourceOver, fraction: 1)
+        cropped.unlockFocus()
+
+        let panel = NSSavePanel()
+        panel.title = "Export Selection"
+        panel.nameFieldStringValue = "Untitled.png"
+        panel.allowedContentTypes = [.png]
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            guard let tiff = cropped.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiff),
+                  let data = bitmap.representation(using: .png, properties: [:]) else { return }
+            try? data.write(to: url)
+        }
     }
 
 }

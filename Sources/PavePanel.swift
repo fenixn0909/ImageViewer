@@ -217,6 +217,9 @@ func loadPaveBoards() -> [BoardData] {
             showGrid: meta.showGrid, gridWidth: CGFloat(meta.gridWidth), gridHeight: CGFloat(meta.gridHeight)
         ))
     }
+    for i in boards.indices where boards[i].selectedLayerId == nil {
+        boards[i].selectedLayerId = boards[i].layers.first?.id
+    }
     return boards.isEmpty ? [BoardData()] : boards
 }
 
@@ -230,6 +233,8 @@ struct PaveContentView: View {
     @State private var showDeleteConfirm = false
     @State private var renamingLayerId: UUID?
     @State private var renameText = ""
+    @State private var lastMouseCanvas: CGPoint = .zero
+    @State private var canvasViewSize: CGSize = .zero
     let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
     private var board: BoardData { boards[selectedTab] }
@@ -393,16 +398,29 @@ struct PaveContentView: View {
                     }
 
                     if let img = b.floatingImage, b.showFloating {
-                        let pos = CGPoint(x: b.floatingOrigin.x * scale + b.dragOffset.width,
-                                          y: b.floatingOrigin.y * scale + b.dragOffset.height)
+                        let fw = img.size.width * scale
+                        let fh = img.size.height * scale
+                        let fx = b.floatingOrigin.x * scale + b.dragOffset.width
+                        let fy = b.floatingOrigin.y * scale + b.dragOffset.height
                         Image(nsImage: img).resizable().interpolation(.none)
-                            .frame(width: img.size.width * scale, height: img.size.height * scale)
-                            .position(x: pos.x + img.size.width * scale / 2,
-                                      y: pos.y + img.size.height * scale / 2)
-                            .overlay(RoundedRectangle(cornerRadius: 2).stroke(style: StrokeStyle(lineWidth: 1.5, dash: [4], dashPhase: dashPhase)).foregroundColor(.blue))
+                            .frame(width: fw, height: fh)
+                            .position(x: fx + fw / 2, y: fy + fh / 2)
+                        Rectangle()
+                            .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [4], dashPhase: dashPhase))
+                            .foregroundColor(.blue)
+                            .frame(width: fw, height: fh)
+                            .position(x: fx + fw / 2, y: fy + fh / 2)
                     }
                 }
                 .frame(width: drawW, height: drawH)
+                .background(GeometryReader { proxy in
+                    Color.clear.onAppear { canvasViewSize = proxy.size }
+                })
+                .onContinuousHover { phase in
+                    if case .active(let pt) = phase {
+                        lastMouseCanvas = pt
+                    }
+                }
                 .gesture(canvasDragGesture(scale: scale))
                 .onTapGesture { boardTapped() }
             }
@@ -417,6 +435,9 @@ struct PaveContentView: View {
         DragGesture(minimumDistance: 2)
             .onChanged { val in
                 if boards[selectedTab].isSelecting || (NSEvent.modifierFlags == [] && !boards[selectedTab].showFloating) {
+                    if !boards[selectedTab].isSelecting {
+                        boards[selectedTab].selectionStart = CGPoint(x: val.startLocation.x / scale, y: val.startLocation.y / scale)
+                    }
                     let b = boards[selectedTab]
                     let start = b.selectionStart
                     let cur = CGPoint(x: val.location.x / scale, y: val.location.y / scale)
@@ -435,18 +456,19 @@ struct PaveContentView: View {
                     }
                     boards[selectedTab].isSelecting = false
                 } else if boards[selectedTab].showFloating {
-                    commitFloating(scale: scale)
+                    let b = boards[selectedTab]
+                    boards[selectedTab].floatingOrigin.x += b.dragOffset.width / scale
+                    boards[selectedTab].floatingOrigin.y += b.dragOffset.height / scale
+                    boards[selectedTab].dragOffset = .zero
                 } else {
-                    let loc = val.location
-                    boards[selectedTab].selectionStart = CGPoint(x: loc.x / scale, y: loc.y / scale)
                     boards[selectedTab].selectionRect = nil
                 }
             }
     }
 
     private func boardTapped() {
-        if boards[selectedTab].showFloating {
-            commitFloating(scale: 1)
+        if boards[selectedTab].selectionRect != nil {
+            boards[selectedTab].selectionRect = nil
         }
     }
 
@@ -480,17 +502,23 @@ struct PaveContentView: View {
             Button("") { cancelFloating() }.keyboardShortcut(.escape, modifiers: []).opacity(0)
             Button("") { copySelection() }.keyboardShortcut("c", modifiers: .command).opacity(0)
             Button("") { clearSelection() }.keyboardShortcut("d", modifiers: .command).opacity(0)
+            Button("") { undo() }.keyboardShortcut("z", modifiers: .command).opacity(0)
+            Button("") { redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
 
     private func pasteImage() {
         guard let image = NSImage(pasteboard: .general),
-              let idx = boards[selectedTab].selectedLayerIndex else { return }
+               boards[selectedTab].selectedLayerIndex != nil else { return }
+        let cw = boards[selectedTab].canvasWidth
+        let ch = boards[selectedTab].canvasHeight
+        let s = canvasViewSize.width > 0 ? min(canvasViewSize.width / cw, canvasViewSize.height / ch) : 1
         boards[selectedTab].floatingImage = image
-        boards[selectedTab].floatingOrigin = CGPoint(x: 20, y: 20)
+        boards[selectedTab].floatingOrigin = CGPoint(x: lastMouseCanvas.x / s, y: lastMouseCanvas.y / s)
         boards[selectedTab].dragOffset = .zero
         boards[selectedTab].showFloating = true
+        boards[selectedTab].selectionRect = nil
     }
 
     private func commitFloating() { commitFloating(scale: 1) }
@@ -505,10 +533,11 @@ struct PaveContentView: View {
         guard let sr = boards[selectedTab].selectionRect,
               let layerIdx = boards[selectedTab].selectedLayerIndex,
               let canvas = boards[selectedTab].layers[layerIdx].canvasImage else { return }
-        let rect = NSRect(x: sr.origin.x, y: canvas.size.height - sr.origin.y - sr.height,
-                          width: sr.width, height: sr.height)
-        guard let cg = canvas.cgImage(forProposedRect: nil, context: nil, hints: nil)?.cropping(to: rect) else { return }
-        let cropped = NSImage(cgImage: cg, size: NSSize(width: sr.width, height: sr.height))
+        let cropped = NSImage(size: NSSize(width: sr.width, height: sr.height))
+        cropped.lockFocus()
+        canvas.draw(at: NSPoint(x: -sr.origin.x, y: -(canvas.size.height - sr.origin.y - sr.height)),
+                    from: .zero, operation: .sourceOver, fraction: 1)
+        cropped.unlockFocus()
         copyToPasteboard(cropped)
     }
 
@@ -518,7 +547,9 @@ struct PaveContentView: View {
 
     private func addBoard() {
         guard canAdd else { return }
-        boards.append(BoardData())
+        var newBoard = BoardData()
+        newBoard.selectedLayerId = newBoard.layers.first?.id
+        boards.append(newBoard)
         selectedTab = boards.count - 1
     }
 
@@ -580,6 +611,7 @@ struct PaveContentView: View {
     }
 
     private func removeLayer(_ idx: Int) {
+        guard boards[selectedTab].layers.count > 1 else { return }
         pushUndo()
         let id = boards[selectedTab].layers[idx].id
         boards[selectedTab].layers.remove(at: idx)
@@ -610,10 +642,12 @@ struct PaveContentView: View {
         let layer = boards[selectedTab].layers[idx]
         let isSelected = boards[selectedTab].selectedLayerId == layer.id
         return HStack(spacing: 6) {
-            Toggle("", isOn: Binding(
-                get: { boards[selectedTab].layers[idx].isVisible },
-                set: { boards[selectedTab].layers[idx].isVisible = $0 }
-            )).toggleStyle(.checkbox).controlSize(.small).frame(width: 16)
+            Button(action: { boards[selectedTab].layers[idx].isVisible.toggle() }) {
+                Image(systemName: boards[selectedTab].layers[idx].isVisible ? "eye.fill" : "eye.slash.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(boards[selectedTab].layers[idx].isVisible ? .primary : .secondary)
+            }
+            .buttonStyle(.plain).frame(width: 16)
 
             ZStack {
                 Color(nsColor: .controlBackgroundColor)
@@ -637,7 +671,7 @@ struct PaveContentView: View {
 
             Spacer()
 
-            if !boards[selectedTab].layers.isEmpty {
+            if boards[selectedTab].layers.count > 1 {
                 Button(action: { removeLayer(idx) }) {
                     Image(systemName: "xmark").font(.system(size: 11)).foregroundColor(.secondary)
                         .padding(4)
