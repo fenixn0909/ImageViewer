@@ -64,10 +64,65 @@ struct ContentView: View {
         .background(arrowKeyButtons)
         .onAppear {
             _ = AnimationPanelController.shared
+            if PreferencesStore.shared.showPaveOnStartup {
+                PavePanelController.shared.window?.makeKeyAndOrderFront(nil)
+            }
             setupTabKeyMonitor()
+            
+            // Automatically trigger the click/restoration sequence on startup
+            triggerAutomaticStartupClick()
         }
         .onChange(of: galleryManager.selectedTab) { newTab in
             if newTab != 0 { PreviewStore.shared.clearPreview() }
+        }
+        // Permanently record the stable path of the image being displayed
+        .onChange(of: displayItem?.filePath) { newPath in
+            if let path = newPath {
+                UserDefaults.standard.set(path, forKey: "lastViewedImagePath")
+            }
+        }
+    }
+
+    /// Simulates a user clicking the last viewed tab and image once app resources load
+    private func triggerAutomaticStartupClick() {
+        guard let lastPath = UserDefaults.standard.string(forKey: "lastViewedImagePath"),
+              FileManager.default.fileExists(atPath: lastPath) else { return }
+        
+        let currentTab = galleryManager.selectedTab
+        
+        if currentTab == 0 {
+            // Browser Tab: Allow the file system layout a split second to settle, then load preview
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                let url = URL(fileURLWithPath: lastPath)
+                Task {
+                    let image = await Task.detached { () -> NSImage? in
+                        ImageViewer.loadImage(from: url)
+                    }.value
+                    if let image = image {
+                        await MainActor.run {
+                            PreviewStore.shared.setPreview(image: image, path: lastPath)
+                        }
+                    }
+                }
+            }
+        } else {
+            // Gallery Tab: Run an automated retry loop that watches for data population
+            var attempts = 0
+            func simulateGalleryItemClick() {
+                let activeStore = galleryManager.activeStore
+                if let existing = activeStore.getItemByPath(lastPath) {
+                    // Match found! Programmatically trigger the click interaction state
+                    activeStore.selectedImageId = existing.id
+                    PreviewStore.shared.clearPreview()
+                } else if attempts < 15 {
+                    // If the gallery files are still loading in the background, retry in 100ms
+                    attempts += 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        simulateGalleryItemClick()
+                    }
+                }
+            }
+            simulateGalleryItemClick()
         }
     }
 
@@ -158,6 +213,7 @@ struct ContentView: View {
             Button("") { navigateToNext() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
             Button("") { zoomIn() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
             Button("") { zoomOut() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
+            Button("") { PavePanelController.shared.toggle() }.keyboardShortcut("p", modifiers: []).opacity(0)
             Button("") { AnimationPanelController.shared.toggle() }.keyboardShortcut("a", modifiers: []).opacity(0)
             Button("") { ConvertPanelController().showWindow(nil) }.keyboardShortcut("q", modifiers: []).opacity(0)
             Button("") { settings.fixedSelectionEnabled.toggle() }.keyboardShortcut("f", modifiers: []).opacity(0)
@@ -207,8 +263,11 @@ struct ContentView: View {
                 Button(action: { ConvertPanelController().showWindow(nil) }) {    // btn-ATA
                     Image(systemName: "film.stack.fill").font(.system(size: 14))
                 }
-                Button(action: {    // btn-showAnim
-                AnimationPanelController.shared.toggle() }) {
+                Button(action: { PavePanelController.shared.toggle() }) {
+                    Image(systemName: "square.grid.3x3")
+                        .font(.system(size: 14))
+                }
+                Button(action: { AnimationPanelController.shared.toggle() }) {
                     Image(systemName: "play.square.stack")
                         .font(.system(size: 14))
                 }

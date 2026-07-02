@@ -82,7 +82,7 @@ struct ThumbnailView: View {
         ZStack(alignment: .topTrailing) {
             Image(nsImage: image).resizable().aspectRatio(contentMode: .fill).frame(width: 50, height: 50)
                 .clipped().cornerRadius(4)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 10))
 
             if isHovered {
                 Button(action: onRemove) {

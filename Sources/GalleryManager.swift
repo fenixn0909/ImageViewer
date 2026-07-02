@@ -5,7 +5,9 @@ class GalleryManager: ObservableObject {
     static let shared = GalleryManager()
 
     @Published var galleries: [ImageStore] = []
-    @Published var selectedTab: Int = 0
+    @Published var selectedTab: Int {
+        didSet { UserDefaults.standard.set(selectedTab, forKey: "lastSelectedTab") }
+    }
 
     var activeStore: ImageStore {
         selectedTab == 0 ? galleries[0] : galleries[selectedTab - 1]
@@ -14,6 +16,7 @@ class GalleryManager: ObservableObject {
     var canRemove: Bool { galleries.count > 1 }
 
     private init() {
+        selectedTab = 0
         galleries.append(ImageStore.shared)
         for i in 2...3 {
             let name = "g\(i)"
@@ -21,6 +24,10 @@ class GalleryManager: ObservableObject {
             if FileManager.default.fileExists(atPath: url.path) {
                 galleries.append(ImageStore(persistentName: name))
             }
+        }
+        let saved = UserDefaults.standard.integer(forKey: "lastSelectedTab")
+        if saved >= 0 && saved <= galleries.count {
+            selectedTab = saved
         }
     }
 

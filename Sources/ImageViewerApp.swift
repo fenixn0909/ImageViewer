@@ -32,6 +32,13 @@ struct ImageViewerApp: App {
                 .keyboardShortcut("w", modifiers: .command)
             }
 
+            CommandGroup(after: .appInfo) {
+                Button("Preferences...") {
+                    PreferencesWindowController.shared.show()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+
             CommandGroup(replacing: .pasteboard) {
                 Button("Select All") {
                     NotificationCenter.default.post(name: .selectAll, object: nil)

@@ -135,11 +135,29 @@ struct ImageItem: Identifiable, Equatable {
 @MainActor
 final class ImageStore: ObservableObject {
     static let shared = ImageStore(loadPersisted: true, persistentName: "g1")
-    @Published var images: [ImageItem] = []
+    @Published var images: [ImageItem] = [] {
+        didSet {
+            if let saved = savedSelectedPath, let matched = images.first(where: { $0.filePath == saved }) {
+                selectedImageId = matched.id
+            } else if selectedImageId == nil {
+                selectedImageId = images.first?.id
+            }
+        }
+    }
     @Published var selectedImageId: UUID?
     @Published var lastError: ImageLoadError?
 
     private let persistentName: String?
+    private var savedSelectedPath: String? {
+        get {
+            guard let name = persistentName else { return nil }
+            return UserDefaults.standard.string(forKey: "selectedPath_\(name)")
+        }
+        set {
+            guard let name = persistentName else { return }
+            UserDefaults.standard.set(newValue, forKey: "selectedPath_\(name)")
+        }
+    }
     private let appSupportDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("ImageViewer")
@@ -171,7 +189,6 @@ final class ImageStore: ObservableObject {
         guard !images.contains(where: { $0.filePath == path }) else { return }
         let item = ImageItem(image: image, thumbnail: thumbnail, filePath: path)
         images.append(item)
-        if selectedImageId == nil { selectedImageId = item.id }
         savePaths()
     }
 
@@ -194,6 +211,7 @@ final class ImageStore: ObservableObject {
 
     @objc private func savePaths() {
         let paths = images.map(\.filePath).filter { !$0.hasPrefix("clipboard") && !$0.hasPrefix("dropped") }
+        savedSelectedPath = getSelectedImage()?.filePath
         guard let data = try? JSONEncoder().encode(paths) else { return }
         try? data.write(to: pathsURL)
     }
