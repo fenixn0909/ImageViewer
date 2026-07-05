@@ -504,6 +504,10 @@ struct PaveContentView: View {
             Button("") { clearSelection() }.keyboardShortcut("d", modifiers: .command).opacity(0)
             Button("") { undo() }.keyboardShortcut("z", modifiers: .command).opacity(0)
             Button("") { redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).opacity(0)
+            Button("") { rotateFloatingCW() }.keyboardShortcut("r", modifiers: .command).opacity(0)
+            Button("") { rotateFloatingCCW() }.keyboardShortcut("r", modifiers: [.command, .shift]).opacity(0)
+            Button("") { flipFloatingH() }.keyboardShortcut("f", modifiers: .command).opacity(0)
+            Button("") { flipFloatingV() }.keyboardShortcut("f", modifiers: [.command, .shift]).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -527,6 +531,54 @@ struct PaveContentView: View {
         boards[selectedTab].floatingImage = nil
         boards[selectedTab].showFloating = false
         boards[selectedTab].dragOffset = .zero
+    }
+
+    private func rotateFloatingCW() {
+        guard let img = boards[selectedTab].floatingImage, boards[selectedTab].showFloating else { return }
+        let rotated = NSImage(size: NSSize(width: img.size.height, height: img.size.width))
+        rotated.lockFocus()
+        let ctx = NSGraphicsContext.current!.cgContext
+        ctx.translateBy(x: img.size.height / 2, y: img.size.width / 2)
+        ctx.rotate(by: .pi / 2)
+        img.draw(at: NSPoint(x: -img.size.width / 2, y: -img.size.height / 2), from: .zero, operation: .sourceOver, fraction: 1)
+        rotated.unlockFocus()
+        boards[selectedTab].floatingImage = rotated
+    }
+
+    private func rotateFloatingCCW() {
+        guard let img = boards[selectedTab].floatingImage, boards[selectedTab].showFloating else { return }
+        let rotated = NSImage(size: NSSize(width: img.size.height, height: img.size.width))
+        rotated.lockFocus()
+        let ctx = NSGraphicsContext.current!.cgContext
+        ctx.translateBy(x: img.size.height / 2, y: img.size.width / 2)
+        ctx.rotate(by: -.pi / 2)
+        img.draw(at: NSPoint(x: -img.size.width / 2, y: -img.size.height / 2), from: .zero, operation: .sourceOver, fraction: 1)
+        rotated.unlockFocus()
+        boards[selectedTab].floatingImage = rotated
+    }
+
+    private func flipFloatingH() {
+        guard let img = boards[selectedTab].floatingImage, boards[selectedTab].showFloating else { return }
+        let flipped = NSImage(size: img.size)
+        flipped.lockFocus()
+        let ctx = NSGraphicsContext.current!.cgContext
+        ctx.translateBy(x: img.size.width, y: 0)
+        ctx.scaleBy(x: -1, y: 1)
+        img.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+        flipped.unlockFocus()
+        boards[selectedTab].floatingImage = flipped
+    }
+
+    private func flipFloatingV() {
+        guard let img = boards[selectedTab].floatingImage, boards[selectedTab].showFloating else { return }
+        let flipped = NSImage(size: img.size)
+        flipped.lockFocus()
+        let ctx = NSGraphicsContext.current!.cgContext
+        ctx.translateBy(x: 0, y: img.size.height)
+        ctx.scaleBy(x: 1, y: -1)
+        img.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+        flipped.unlockFocus()
+        boards[selectedTab].floatingImage = flipped
     }
 
     private func copySelection() {
