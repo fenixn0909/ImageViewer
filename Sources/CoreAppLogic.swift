@@ -332,4 +332,12 @@ extension Color {
         srgb.getRed(&r, green: &g, blue: &b, alpha: &a)
         return String(format: "#%02X%02X%02X", Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
     }
+
+    /// Like `toHex()` but preserves alpha (8-digit hex), so translucent colors round-trip correctly.
+    func toHexWithAlpha() -> String {
+        guard let srgb = NSColor(self).usingColorSpace(.sRGB) else { return "#0000FFFF" }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        srgb.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X%02X", Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()), Int((a * 255).rounded()))
+    }
 }

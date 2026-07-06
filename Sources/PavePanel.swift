@@ -112,6 +112,9 @@ struct BoardData {
     var showGrid = false
     var gridWidth: CGFloat = 32
     var gridHeight: CGFloat = 32
+    var gridStrokeColor: Color = .gray.opacity(0.4)
+    var gridStrokeWidth: CGFloat = 0.5
+    var snapToGrid = false
 
     var selectionRect: CGRect?
     var selectionStart: CGPoint = .zero
@@ -158,8 +161,43 @@ private struct BoardMeta: Codable {
     let showGrid: Bool
     let gridWidth: Double
     let gridHeight: Double
+    let gridStrokeColorHex: String
+    let gridStrokeWidth: Double
+    let snapToGrid: Bool
     let layers: [LayerMeta]
     let selectedLayerId: String?
+
+    init(canvasWidth: Double, canvasHeight: Double, bgColorHex: String, showGrid: Bool,
+         gridWidth: Double, gridHeight: Double, gridStrokeColorHex: String, gridStrokeWidth: Double,
+         snapToGrid: Bool, layers: [LayerMeta], selectedLayerId: String?) {
+        self.canvasWidth = canvasWidth
+        self.canvasHeight = canvasHeight
+        self.bgColorHex = bgColorHex
+        self.showGrid = showGrid
+        self.gridWidth = gridWidth
+        self.gridHeight = gridHeight
+        self.gridStrokeColorHex = gridStrokeColorHex
+        self.gridStrokeWidth = gridStrokeWidth
+        self.snapToGrid = snapToGrid
+        self.layers = layers
+        self.selectedLayerId = selectedLayerId
+    }
+
+    // Custom decoding so boards saved before grid-stroke/snap were added still load fine.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        canvasWidth = try c.decode(Double.self, forKey: .canvasWidth)
+        canvasHeight = try c.decode(Double.self, forKey: .canvasHeight)
+        bgColorHex = try c.decode(String.self, forKey: .bgColorHex)
+        showGrid = try c.decode(Bool.self, forKey: .showGrid)
+        gridWidth = try c.decode(Double.self, forKey: .gridWidth)
+        gridHeight = try c.decode(Double.self, forKey: .gridHeight)
+        gridStrokeColorHex = try c.decodeIfPresent(String.self, forKey: .gridStrokeColorHex) ?? "#8080807F"
+        gridStrokeWidth = try c.decodeIfPresent(Double.self, forKey: .gridStrokeWidth) ?? 0.5
+        snapToGrid = try c.decodeIfPresent(Bool.self, forKey: .snapToGrid) ?? false
+        layers = try c.decode([LayerMeta].self, forKey: .layers)
+        selectedLayerId = try c.decodeIfPresent(String.self, forKey: .selectedLayerId)
+    }
 }
 
 func savePaveBoards(_ boards: [BoardData]) {
@@ -185,6 +223,8 @@ func savePaveBoards(_ boards: [BoardData]) {
             canvasWidth: board.canvasWidth, canvasHeight: board.canvasHeight,
             bgColorHex: board.bgColor.toHex(),
             showGrid: board.showGrid, gridWidth: board.gridWidth, gridHeight: board.gridHeight,
+            gridStrokeColorHex: board.gridStrokeColor.toHexWithAlpha(), gridStrokeWidth: board.gridStrokeWidth,
+            snapToGrid: board.snapToGrid,
             layers: layersMeta, selectedLayerId: board.selectedLayerId?.uuidString
         )
         if let data = try? JSONEncoder().encode(meta) {
@@ -214,7 +254,10 @@ func loadPaveBoards() -> [BoardData] {
             canvasWidth: CGFloat(meta.canvasWidth), canvasHeight: CGFloat(meta.canvasHeight),
             bgColor: Color(hex: meta.bgColorHex) ?? .white,
             layers: layers, selectedLayerId: selId,
-            showGrid: meta.showGrid, gridWidth: CGFloat(meta.gridWidth), gridHeight: CGFloat(meta.gridHeight)
+            showGrid: meta.showGrid, gridWidth: CGFloat(meta.gridWidth), gridHeight: CGFloat(meta.gridHeight),
+            gridStrokeColor: Color(hex: meta.gridStrokeColorHex) ?? .gray.opacity(0.4),
+            gridStrokeWidth: CGFloat(meta.gridStrokeWidth),
+            snapToGrid: meta.snapToGrid
         ))
     }
     for i in boards.indices where boards[i].selectedLayerId == nil {
@@ -331,6 +374,20 @@ struct PaveContentView: View {
                 set: { boards[selectedTab].gridHeight = max(1, $0) }
             ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50)
 
+            ColorPicker("", selection: Binding(
+                get: { boards[selectedTab].gridStrokeColor },
+                set: { boards[selectedTab].gridStrokeColor = $0 }
+            )).labelsHidden().frame(width: 16, height: 16).help("Grid stroke color")
+            TextField("pt", value: Binding(
+                get: { boards[selectedTab].gridStrokeWidth },
+                set: { boards[selectedTab].gridStrokeWidth = max(0.1, $0) }
+            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 40).help("Grid stroke width")
+
+            Toggle("Snap", isOn: Binding(
+                get: { boards[selectedTab].snapToGrid },
+                set: { boards[selectedTab].snapToGrid = $0 }
+            )).toggleStyle(.checkbox).font(.caption).help("Snap pasted image center to nearest grid cell center")
+
             Divider().frame(height: 16)
 
             Text("Size").font(.caption).foregroundColor(.secondary)
@@ -382,7 +439,8 @@ struct PaveContentView: View {
                     }
 
                     if b.showGrid {
-                        GridOverlay(width: drawW, height: drawH, gridW: b.gridWidth * scale, gridH: b.gridHeight * scale)
+                        GridOverlay(width: drawW, height: drawH, gridW: b.gridWidth * scale, gridH: b.gridHeight * scale,
+                                    strokeColor: b.gridStrokeColor, strokeWidth: b.gridStrokeWidth)
                     }
 
                     if let sr = b.selectionRect {
@@ -446,7 +504,16 @@ struct PaveContentView: View {
                     boards[selectedTab].selectionRect = rect
                     boards[selectedTab].isSelecting = true
                 } else if boards[selectedTab].showFloating {
-                    boards[selectedTab].dragOffset = val.translation
+                    let b = boards[selectedTab]
+                    if b.snapToGrid, let img = b.floatingImage {
+                        let rawOrigin = CGPoint(x: b.floatingOrigin.x + val.translation.width / scale,
+                                                 y: b.floatingOrigin.y + val.translation.height / scale)
+                        let snapped = snappedOrigin(forRawOrigin: rawOrigin, imgSize: img.size, gridW: b.gridWidth, gridH: b.gridHeight)
+                        boards[selectedTab].dragOffset = CGSize(width: (snapped.x - b.floatingOrigin.x) * scale,
+                                                                 height: (snapped.y - b.floatingOrigin.y) * scale)
+                    } else {
+                        boards[selectedTab].dragOffset = val.translation
+                    }
                 }
             }
             .onEnded { val in
@@ -464,6 +531,17 @@ struct PaveContentView: View {
                     boards[selectedTab].selectionRect = nil
                 }
             }
+    }
+
+    /// Given a proposed top-left origin (canvas coordinates, unscaled) for an image of `imgSize`,
+    /// returns the origin adjusted so the image's *center* lands on the center of the nearest grid cell.
+    private func snappedOrigin(forRawOrigin origin: CGPoint, imgSize: NSSize, gridW: CGFloat, gridH: CGFloat) -> CGPoint {
+        guard gridW > 0, gridH > 0 else { return origin }
+        let centerX = origin.x + imgSize.width / 2
+        let centerY = origin.y + imgSize.height / 2
+        let snappedCenterX = (floor(centerX / gridW) + 0.5) * gridW
+        let snappedCenterY = (floor(centerY / gridH) + 0.5) * gridH
+        return CGPoint(x: snappedCenterX - imgSize.width / 2, y: snappedCenterY - imgSize.height / 2)
     }
 
     private func boardTapped() {
@@ -518,8 +596,13 @@ struct PaveContentView: View {
         let cw = boards[selectedTab].canvasWidth
         let ch = boards[selectedTab].canvasHeight
         let s = canvasViewSize.width > 0 ? min(canvasViewSize.width / cw, canvasViewSize.height / ch) : 1
+        var origin = CGPoint(x: lastMouseCanvas.x / s, y: lastMouseCanvas.y / s)
+        let b = boards[selectedTab]
+        if b.snapToGrid {
+            origin = snappedOrigin(forRawOrigin: origin, imgSize: image.size, gridW: b.gridWidth, gridH: b.gridHeight)
+        }
         boards[selectedTab].floatingImage = image
-        boards[selectedTab].floatingOrigin = CGPoint(x: lastMouseCanvas.x / s, y: lastMouseCanvas.y / s)
+        boards[selectedTab].floatingOrigin = origin
         boards[selectedTab].dragOffset = .zero
         boards[selectedTab].showFloating = true
         boards[selectedTab].selectionRect = nil
@@ -801,17 +884,19 @@ struct PaveContentView: View {
         let height: CGFloat
         let gridW: CGFloat
         let gridH: CGFloat
+        let strokeColor: Color
+        let strokeWidth: CGFloat
 
         var body: some View {
             Canvas { context, size in
                 var x: CGFloat = gridW
                 while x < size.width {
-                    context.stroke(Path { p in p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: size.height)) }, with: .color(.gray.opacity(0.4)), lineWidth: 0.5)
+                    context.stroke(Path { p in p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: size.height)) }, with: .color(strokeColor), lineWidth: strokeWidth)
                     x += gridW
                 }
                 var y: CGFloat = gridH
                 while y < size.height {
-                    context.stroke(Path { p in p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y)) }, with: .color(.gray.opacity(0.4)), lineWidth: 0.5)
+                    context.stroke(Path { p in p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y)) }, with: .color(strokeColor), lineWidth: strokeWidth)
                     y += gridH
                 }
             }
