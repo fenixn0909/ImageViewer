@@ -68,6 +68,17 @@ struct ImageViewerApp: App {
                     GalleryManager.shared.activeStore.clearAll()
                 }
             }
+
+            CommandGroup(after: .help) {
+                Button("Shortcuts") {
+                    ShortcutsWindowController.shared.show()
+                }
+                .keyboardShortcut("/", modifiers: .command)
+
+                Button("App Features") {
+                    FeaturesWindowController.shared.show()
+                }
+            }
         }
     }
     

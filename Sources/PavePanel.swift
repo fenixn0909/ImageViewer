@@ -278,6 +278,9 @@ struct PaveContentView: View {
     @State private var renameText = ""
     @State private var lastMouseCanvas: CGPoint = .zero
     @State private var canvasViewSize: CGSize = .zero
+    @State private var canvasZoom: CGFloat = 1
+    @State private var zoomBase: CGFloat = 1
+    @State private var floatingFollowsMouse = false
     let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
     private var board: BoardData { boards[selectedTab] }
@@ -309,6 +312,7 @@ struct PaveContentView: View {
         } message: {
             Text("Remove Board\(selectedTab + 1)? The canvas content will be lost.")
         }
+        .onChange(of: selectedTab) { _ in canvasZoom = 1; zoomBase = 1 }
     }
 
     // MARK: - Tab Bar
@@ -324,6 +328,7 @@ struct PaveContentView: View {
             }
             .buttonStyle(.plain).padding(4)
             .disabled(!canRemove)
+            .help("Remove board")
 
             ForEach(boards.indices, id: \.self) { i in
                 Button(action: { selectedTab = i }) {
@@ -335,6 +340,7 @@ struct PaveContentView: View {
                         .cornerRadius(4)
                 }
                 .buttonStyle(.plain).padding(4)
+                .help("Switch to board \(i + 1)")
             }
 
             Button(action: addBoard) {
@@ -346,6 +352,7 @@ struct PaveContentView: View {
             }
             .buttonStyle(.plain).padding(4)
             .disabled(!canAdd)
+            .help("Add board")
 
             Spacer()
         }
@@ -361,18 +368,18 @@ struct PaveContentView: View {
             Toggle("Grid", isOn: Binding(
                 get: { boards[selectedTab].showGrid },
                 set: { boards[selectedTab].showGrid = $0 }
-            )).toggleStyle(.checkbox).font(.caption)
+            )).toggleStyle(.checkbox).font(.caption).help("Show/hide grid")
 
             Text("W:").foregroundColor(.secondary).font(.caption)
             TextField("px", value: Binding(
                 get: { boards[selectedTab].gridWidth },
                 set: { boards[selectedTab].gridWidth = max(1, $0) }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50)
+            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50).help("Grid cell width")
             Text("H:").foregroundColor(.secondary).font(.caption)
             TextField("px", value: Binding(
                 get: { boards[selectedTab].gridHeight },
                 set: { boards[selectedTab].gridHeight = max(1, $0) }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50)
+            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50).help("Grid cell height")
 
             ColorPicker("", selection: Binding(
                 get: { boards[selectedTab].gridStrokeColor },
@@ -395,18 +402,18 @@ struct PaveContentView: View {
             TextField("px", value: Binding(
                 get: { boards[selectedTab].canvasWidth },
                 set: { boards[selectedTab].canvasWidth = $0 }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60)
+            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60).help("Canvas width")
             Text("H:").foregroundColor(.secondary).font(.caption)
             TextField("px", value: Binding(
                 get: { boards[selectedTab].canvasHeight },
                 set: { boards[selectedTab].canvasHeight = $0 }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60)
+            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60).help("Canvas height")
             ColorPicker("", selection: Binding(
                 get: { prefs.checkerColor2 },
                 set: { prefs.checkerColor2 = $0 }
             )).labelsHidden().frame(width: 16, height: 16).help("Checker dark color")
             Spacer()
-            Button("Clear") { clearBoard() }
+            Button("Clear") { clearBoard() }.help("Clear selected layer")
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
     }
@@ -418,73 +425,147 @@ struct PaveContentView: View {
             let b = boards[selectedTab]
             let cw = max(1, b.canvasWidth)
             let ch = max(1, b.canvasHeight)
-            let scale = min(geo.size.width / cw, geo.size.height / ch)
-            let drawW = cw * scale
-            let drawH = ch * scale
+            let baseScale = min(geo.size.width / cw, geo.size.height / ch)
+            let displayScale = baseScale * canvasZoom
+            let drawW = cw * displayScale
+            let drawH = ch * displayScale
 
             ZStack {
                 Color(nsColor: .windowBackgroundColor)
 
-                ZStack(alignment: .topLeading) {
-                    Checkerboard(width: drawW, height: drawH,
-                                 tileW: prefs.checkerTileWidth, tileH: prefs.checkerTileHeight,
-                                 color1: prefs.checkerColor1,
-                                 color2: prefs.checkerColor2)
+                ScrollView([.horizontal, .vertical]) {
+                    ZStack(alignment: .topLeading) {
+                        Checkerboard(width: drawW, height: drawH,
+                                     tileW: prefs.checkerTileWidth, tileH: prefs.checkerTileHeight,
+                                     color1: prefs.checkerColor1,
+                                     color2: prefs.checkerColor2)
 
-                    ForEach(b.layers) { layer in
-                        if layer.isVisible, let img = layer.canvasImage {
+                        ForEach(b.layers) { layer in
+                            if layer.isVisible, let img = layer.canvasImage {
+                                Image(nsImage: img).resizable().interpolation(.none)
+                                    .frame(width: drawW, height: drawH)
+                            }
+                        }
+
+                        if b.showGrid {
+                            GridOverlay(width: drawW, height: drawH, gridW: b.gridWidth * displayScale, gridH: b.gridHeight * displayScale,
+                                        strokeColor: b.gridStrokeColor, strokeWidth: b.gridStrokeWidth)
+                        }
+
+                        if let sr = b.selectionRect {
+                            let sx = sr.origin.x * displayScale
+                            let sy = sr.origin.y * displayScale
+                            let sw = sr.width * displayScale
+                            let sh = sr.height * displayScale
+                            Rectangle()
+                                .strokeBorder(style: StrokeStyle(lineWidth: 2.5, dash: [6], dashPhase: dashPhase))
+                                .foregroundColor(.blue)
+                                .frame(width: sw, height: sh)
+                                .position(x: sx + sw / 2, y: sy + sh / 2)
+                        }
+
+                        if let img = b.floatingImage, b.showFloating {
+                            let fw = img.size.width * displayScale
+                            let fh = img.size.height * displayScale
+                            let fx = b.floatingOrigin.x * displayScale + b.dragOffset.width
+                            let fy = b.floatingOrigin.y * displayScale + b.dragOffset.height
                             Image(nsImage: img).resizable().interpolation(.none)
-                                .frame(width: drawW, height: drawH)
+                                .frame(width: fw, height: fh)
+                                .position(x: fx + fw / 2, y: fy + fh / 2)
+                            Rectangle()
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [4], dashPhase: dashPhase))
+                                .foregroundColor(.blue)
+                                .frame(width: fw, height: fh)
+                                .position(x: fx + fw / 2, y: fy + fh / 2)
+                        }
+
+                        RightClickCatcher { pt in selectGridCell(at: pt, viewHeight: drawH, displayScale: displayScale) }
+                            .frame(width: drawW, height: drawH)
+                    }
+                    .frame(width: drawW, height: drawH)
+                    .background(GeometryReader { proxy in
+                        Color.clear.onAppear { canvasViewSize = proxy.size }
+                    })
+                    .onContinuousHover { phase in
+                        if case .active(let pt) = phase {
+                            lastMouseCanvas = pt
+                            if floatingFollowsMouse, boards[selectedTab].showFloating, let img = boards[selectedTab].floatingImage {
+                                let mc = CGPoint(x: pt.x / displayScale, y: pt.y / displayScale)
+                                var origin = CGPoint(x: mc.x - img.size.width / 2, y: mc.y - img.size.height / 2)
+                                if boards[selectedTab].snapToGrid {
+                                    origin = snappedOrigin(forRawOrigin: origin, imgSize: img.size, gridW: boards[selectedTab].gridWidth, gridH: boards[selectedTab].gridHeight)
+                                }
+                                boards[selectedTab].floatingOrigin = origin
+                            }
                         }
                     }
-
-                    if b.showGrid {
-                        GridOverlay(width: drawW, height: drawH, gridW: b.gridWidth * scale, gridH: b.gridHeight * scale,
-                                    strokeColor: b.gridStrokeColor, strokeWidth: b.gridStrokeWidth)
-                    }
-
-                    if let sr = b.selectionRect {
-                        let sx = sr.origin.x * scale
-                        let sy = sr.origin.y * scale
-                        let sw = sr.width * scale
-                        let sh = sr.height * scale
-                        Rectangle()
-                            .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [4], dashPhase: dashPhase))
-                            .foregroundColor(.blue)
-                            .frame(width: sw, height: sh)
-                            .position(x: sx + sw / 2, y: sy + sh / 2)
-                    }
-
-                    if let img = b.floatingImage, b.showFloating {
-                        let fw = img.size.width * scale
-                        let fh = img.size.height * scale
-                        let fx = b.floatingOrigin.x * scale + b.dragOffset.width
-                        let fy = b.floatingOrigin.y * scale + b.dragOffset.height
-                        Image(nsImage: img).resizable().interpolation(.none)
-                            .frame(width: fw, height: fh)
-                            .position(x: fx + fw / 2, y: fy + fh / 2)
-                        Rectangle()
-                            .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [4], dashPhase: dashPhase))
-                            .foregroundColor(.blue)
-                            .frame(width: fw, height: fh)
-                            .position(x: fx + fw / 2, y: fy + fh / 2)
-                    }
+                    .simultaneousGesture(canvasDragGesture(scale: displayScale))
+                    .onTapGesture { boardTapped() }
                 }
-                .frame(width: drawW, height: drawH)
-                .background(GeometryReader { proxy in
-                    Color.clear.onAppear { canvasViewSize = proxy.size }
-                })
-                .onContinuousHover { phase in
-                    if case .active(let pt) = phase {
-                        lastMouseCanvas = pt
+                .scrollDisabled(canvasZoom <= 1.05)
+                .scrollIndicators(.never)
+                .gesture(MagnificationGesture()
+                    .onChanged { value in
+                        canvasZoom = min(8, max(0.25, zoomBase * value))
                     }
-                }
-                .gesture(canvasDragGesture(scale: scale))
-                .onTapGesture { boardTapped() }
+                    .onEnded { value in
+                        zoomBase = min(8, max(0.25, zoomBase * value))
+                    }
+                )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
         }
+    }
+
+    // MARK: - Right-Click Grid Cell Selection
+
+    private struct RightClickCatcher: NSViewRepresentable {
+        let onRightClick: (CGPoint) -> Void
+        func makeNSView(context: Context) -> NSView {
+            let v = RightClickNSView()
+            v.onRightClick = onRightClick
+            return v
+        }
+        func updateNSView(_ nsView: NSView, context: Context) {
+            (nsView as? RightClickNSView)?.onRightClick = onRightClick
+        }
+    }
+
+    private class RightClickNSView: NSView {
+        var onRightClick: ((CGPoint) -> Void)?
+        override func rightMouseDown(with event: NSEvent) {
+            let pt = convert(event.locationInWindow, from: nil)
+            onRightClick?(pt)
+        }
+    }
+
+    private func selectGridCell(at viewPoint: CGPoint, viewHeight: CGFloat, displayScale: CGFloat) {
+        guard displayScale > 0 else { return }
+        let b = boards[selectedTab]
+        let gw = b.gridWidth
+        let gh = b.gridHeight
+        guard gw > 0, gh > 0 else { return }
+        let cx = viewPoint.x / displayScale
+        let cy = (viewHeight - viewPoint.y) / displayScale
+        let gx = floor(cx / gw) * gw
+        let gy = floor(cy / gh) * gh
+
+        guard let layerIdx = boards[selectedTab].selectedLayerIndex,
+              let canvas = boards[selectedTab].layers[layerIdx].canvasImage else { return }
+        let extracted = NSImage(size: NSSize(width: gw, height: gh))
+        extracted.lockFocus()
+        canvas.draw(at: NSPoint(x: -gx, y: -(canvas.size.height - gy - gh)),
+                    from: .zero, operation: .sourceOver, fraction: 1)
+        extracted.unlockFocus()
+
+        let mouseCanvas = CGPoint(x: lastMouseCanvas.x / displayScale, y: lastMouseCanvas.y / displayScale)
+
+        boards[selectedTab].floatingImage = extracted
+        boards[selectedTab].floatingOrigin = CGPoint(x: mouseCanvas.x - gw / 2, y: mouseCanvas.y - gh / 2)
+        boards[selectedTab].dragOffset = .zero
+        boards[selectedTab].showFloating = true
+        floatingFollowsMouse = true
     }
 
     // MARK: - Canvas Gestures
@@ -504,6 +585,7 @@ struct PaveContentView: View {
                     boards[selectedTab].selectionRect = rect
                     boards[selectedTab].isSelecting = true
                 } else if boards[selectedTab].showFloating {
+                    floatingFollowsMouse = false
                     let b = boards[selectedTab]
                     if b.snapToGrid, let img = b.floatingImage {
                         let rawOrigin = CGPoint(x: b.floatingOrigin.x + val.translation.width / scale,
@@ -554,6 +636,7 @@ struct PaveContentView: View {
         guard boards[selectedTab].showFloating,
               let img = boards[selectedTab].floatingImage,
               let layerIdx = boards[selectedTab].selectedLayerIndex else { return }
+        floatingFollowsMouse = false
         pushUndo()
         let b = boards[selectedTab]
         let canvasSize = NSSize(width: b.canvasWidth, height: b.canvasHeight)
@@ -586,6 +669,7 @@ struct PaveContentView: View {
             Button("") { rotateFloatingCCW() }.keyboardShortcut("r", modifiers: [.command, .shift]).opacity(0)
             Button("") { flipFloatingH() }.keyboardShortcut("f", modifiers: .command).opacity(0)
             Button("") { flipFloatingV() }.keyboardShortcut("f", modifiers: [.command, .shift]).opacity(0)
+            Button("") { boards[selectedTab].showGrid.toggle() }.keyboardShortcut("g", modifiers: .command).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -606,11 +690,13 @@ struct PaveContentView: View {
         boards[selectedTab].dragOffset = .zero
         boards[selectedTab].showFloating = true
         boards[selectedTab].selectionRect = nil
+        floatingFollowsMouse = false
     }
 
     private func commitFloating() { commitFloating(scale: 1) }
 
     private func cancelFloating() {
+        floatingFollowsMouse = false
         boards[selectedTab].floatingImage = nil
         boards[selectedTab].showFloating = false
         boards[selectedTab].dragOffset = .zero
@@ -733,7 +819,7 @@ struct PaveContentView: View {
                 Image(systemName: "plus").font(.system(size: 13, weight: .bold))
                     .frame(maxWidth: .infinity).padding(.vertical, 10)
             }
-            .buttonStyle(.plain).padding(.horizontal, 4)
+            .buttonStyle(.plain).padding(.horizontal, 4).help("Add layer")
         }
         .background(Color(nsColor: .controlBackgroundColor))
     }
@@ -782,7 +868,7 @@ struct PaveContentView: View {
                     .font(.system(size: 12))
                     .foregroundColor(boards[selectedTab].layers[idx].isVisible ? .primary : .secondary)
             }
-            .buttonStyle(.plain).frame(width: 16)
+            .buttonStyle(.plain).frame(width: 16).help("Toggle visibility")
 
             ZStack {
                 Color(nsColor: .controlBackgroundColor)
@@ -811,7 +897,7 @@ struct PaveContentView: View {
                     Image(systemName: "xmark").font(.system(size: 11)).foregroundColor(.secondary)
                         .padding(4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).help("Remove layer")
             }
         }
         .padding(.horizontal, 6).padding(.vertical, 4)
@@ -834,8 +920,8 @@ struct PaveContentView: View {
             if board.showFloating { Text("· Floating").font(.caption).foregroundColor(.orange) }
             Spacer()
             HStack(spacing: 4) {
-                Button("Undo") { undo() }.font(.caption)
-                Button("Redo") { redo() }.font(.caption)
+                Button("Undo") { undo() }.font(.caption).help("Undo (Cmd+Z)")
+                Button("Redo") { redo() }.font(.caption).help("Redo (Cmd+Shift+Z)")
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
