@@ -442,8 +442,6 @@ struct AnimationContentView: View {
         HStack(spacing: 0) {
             Button("") { defocusAll(); previousFrame() }.keyboardShortcut(.leftArrow, modifiers: []).opacity(0)
             Button("") { defocusAll(); nextFrame() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
-            Button("") { defocusAll(); previousAnimation() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
-            Button("") { defocusAll(); nextAnimation() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
             Button("") { defocusAll(); nudgeOffset(dx: -1, dy: 0, step: 1) }.keyboardShortcut("j", modifiers: []).opacity(0)
             Button("") { defocusAll(); nudgeOffset(dx: 1, dy: 0, step: 1) }.keyboardShortcut("l", modifiers: []).opacity(0)
             Button("") { defocusAll(); nudgeOffset(dx: 0, dy: -1, step: 1) }.keyboardShortcut("i", modifiers: []).opacity(0)

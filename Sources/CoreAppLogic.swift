@@ -123,13 +123,22 @@ struct ImageItem: Identifiable, Equatable {
     let image: NSImage
     let thumbnail: NSImage?
     let filePath: String
+    var isFavorite: Bool
 
-    init(image: NSImage, thumbnail: NSImage? = nil, filePath: String) {
+    init(image: NSImage, thumbnail: NSImage? = nil, filePath: String, isFavorite: Bool = false) {
         self.id = UUID()
         self.image = image
         self.thumbnail = thumbnail
         self.filePath = filePath
+        self.isFavorite = isFavorite
     }
+}
+
+/// On-disk record for a persisted gallery image. Kept separate from `ImageItem` since
+/// only the path + favorite flag are worth persisting (not the decoded NSImage).
+private struct PersistedImageEntry: Codable {
+    let path: String
+    let isFavorite: Bool
 }
 
 @MainActor
@@ -173,6 +182,10 @@ final class ImageStore: ObservableObject {
         }
     }
 
+    /// Favorite status read from disk before the matching image has finished loading
+    /// asynchronously; consumed by `addImage` once that image lands.
+    private var pendingFavoritePaths: Set<String> = []
+
     init(persistentName: String?) {
         self.persistentName = persistentName
         loadPaths()
@@ -187,7 +200,8 @@ final class ImageStore: ObservableObject {
 
     func addImage(_ image: NSImage, thumbnail: NSImage?, path: String) {
         guard !images.contains(where: { $0.filePath == path }) else { return }
-        let item = ImageItem(image: image, thumbnail: thumbnail, filePath: path)
+        let isFav = pendingFavoritePaths.remove(path) != nil
+        let item = ImageItem(image: image, thumbnail: thumbnail, filePath: path, isFavorite: isFav)
         images.append(item)
         savePaths()
     }
@@ -196,6 +210,12 @@ final class ImageStore: ObservableObject {
         images.removeAll { $0.id == id }
         if selectedImageId == id { selectedImageId = images.first?.id }
         if images.isEmpty { NotificationCenter.default.post(name: .clearSelection, object: nil) }
+        savePaths()
+    }
+
+    func toggleFavorite(_ id: UUID) {
+        guard let idx = images.firstIndex(where: { $0.id == id }) else { return }
+        images[idx].isFavorite.toggle()
         savePaths()
     }
 
@@ -210,19 +230,30 @@ final class ImageStore: ObservableObject {
     func getItemByPath(_ path: String) -> ImageItem? { images.first { $0.filePath == path } }
 
     @objc private func savePaths() {
-        let paths = images.map(\.filePath).filter { !$0.hasPrefix("clipboard") && !$0.hasPrefix("dropped") }
+        let entries = images
+            .filter { !$0.filePath.hasPrefix("clipboard") && !$0.filePath.hasPrefix("dropped") }
+            .map { PersistedImageEntry(path: $0.filePath, isFavorite: $0.isFavorite) }
         savedSelectedPath = getSelectedImage()?.filePath
-        guard let data = try? JSONEncoder().encode(paths) else { return }
+        guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: pathsURL)
     }
 
     private func loadPaths() {
         migrateIfNeeded()
-        guard let data = try? Data(contentsOf: pathsURL),
-              let paths = try? JSONDecoder().decode([String].self, from: data) else { return }
-        for path in paths {
-            guard FileManager.default.fileExists(atPath: path) else { continue }
-            Task { await ImageLoader.shared.loadAndSend(url: URL(fileURLWithPath: path), to: self) }
+        guard let data = try? Data(contentsOf: pathsURL) else { return }
+
+        if let entries = try? JSONDecoder().decode([PersistedImageEntry].self, from: data) {
+            for entry in entries {
+                guard FileManager.default.fileExists(atPath: entry.path) else { continue }
+                if entry.isFavorite { pendingFavoritePaths.insert(entry.path) }
+                Task { await ImageLoader.shared.loadAndSend(url: URL(fileURLWithPath: entry.path), to: self) }
+            }
+        } else if let paths = try? JSONDecoder().decode([String].self, from: data) {
+            // Legacy format written before favorites existed: plain array of paths.
+            for path in paths {
+                guard FileManager.default.fileExists(atPath: path) else { continue }
+                Task { await ImageLoader.shared.loadAndSend(url: URL(fileURLWithPath: path), to: self) }
+            }
         }
     }
 

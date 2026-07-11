@@ -714,7 +714,7 @@ struct PaveContentView: View {
         let dh = ch * ds
 
         if NSEvent.modifierFlags.contains(.command) {
-            addGridCellToLibrary(displayScale: ds, drawH: dh)
+            captureGridCell(displayScale: ds, drawH: dh)
             return
         }
         if stampPattern != nil {
@@ -726,14 +726,15 @@ struct PaveContentView: View {
         }
     }
 
-    private func addGridCellToLibrary(displayScale: CGFloat, drawH: CGFloat) {
+    private func captureGridCell(displayScale: CGFloat, drawH: CGFloat) {
         guard displayScale > 0, drawH > 0 else { return }
         let b = boards[selectedTab]
         let gw = b.gridWidth
         let gh = b.gridHeight
         guard gw > 0, gh > 0 else { return }
+
         let cx = lastMouseCanvas.x / displayScale
-        let cy = (drawH - lastMouseCanvas.y) / displayScale
+        let cy = lastMouseCanvas.y / displayScale
         let gx = floor(cx / gw) * gw
         let gy = floor(cy / gh) * gh
 
@@ -745,11 +746,21 @@ struct PaveContentView: View {
                     from: NSRect.zero, operation: .sourceOver, fraction: 1)
         extracted.unlockFocus()
 
+        // Add to library (no duplicates)
         let data = extracted.tiffRepresentation
-        if stampLibrary.contains(where: { $0.tiffRepresentation == data }) { return }
-        pushStampUndo()
-        stampLibrary.append(extracted)
-        librarySelectedIndex = stampLibrary.count - 1
+        if !stampLibrary.contains(where: { $0.tiffRepresentation == data }) {
+            pushStampUndo()
+            stampLibrary.append(extracted)
+            librarySelectedIndex = stampLibrary.count - 1
+        }
+
+        // Set as active stamp pattern (same as right-click)
+        stampPattern = extracted
+        stampCenter = CGPoint(x: gx + gw / 2, y: gy + gh / 2)
+        boards[selectedTab].floatingImage = nil
+        boards[selectedTab].showFloating = false
+        boards[selectedTab].dragOffset = .zero
+        floatingFollowsMouse = false
     }
 
     private func deleteSelectedStamp() {

@@ -21,8 +21,13 @@ struct GallerySidebar: View {
                             ThumbnailView(
                                 image: item.thumbnail ?? item.image,
                                 isSelected: store.selectedImageId == item.id,
-                                onRemove: { store.removeImage(item.id) }
-                            ).onTapGesture { store.selectedImageId = item.id; PreviewStore.shared.clearPreview() }
+                                isFavorite: item.isFavorite,
+                                onRemove: { store.removeImage(item.id) },
+                                onToggleFavorite: { store.toggleFavorite(item.id) }
+                            ).onTapGesture {
+                                store.selectedImageId = item.id
+                                PreviewStore.shared.clearPreview()
+                            }
                         }
                     }.padding(8)
                 }.frame(maxHeight: .infinity)
@@ -75,21 +80,35 @@ struct DropAddButton: View {
 struct ThumbnailView: View {
     let image: NSImage
     let isSelected: Bool
+    let isFavorite: Bool
     let onRemove: () -> Void
+    let onToggleFavorite: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill).frame(width: 50, height: 50)
-                .clipped().cornerRadius(4)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 10))
-
-            if isHovered {
-                Button(action: onRemove) {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundColor(.white)
-                        .background(Circle().fill(Color.red).frame(width: 14, height: 14))
-                }.buttonStyle(.plain).offset(x: 4, y: -4)
+        HStack(spacing: 3) {
+            Button(action: onToggleFavorite) {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(isFavorite ? .yellow : .gray)
+                    .shadow(color: .black.opacity(0.4), radius: 1)
             }
-        }.onHover { isHovered = $0 }
+            .buttonStyle(.plain)
+            .opacity(isFavorite ? 1 : (isHovered ? 0.8 : 0.5))
+
+            ZStack(alignment: .topTrailing) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill).frame(width: 50, height: 50)
+                    .clipped().cornerRadius(4)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 10))
+
+                if isHovered {
+                    Button(action: onRemove) {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundColor(.white)
+                            .background(Circle().fill(Color.red).frame(width: 14, height: 14))
+                    }.buttonStyle(.plain).offset(x: 4, y: -4)
+                }
+            }
+        }
+        .onHover { isHovered = $0 }
     }
 }

@@ -5,7 +5,8 @@ struct ContentView: View {
     @EnvironmentObject private var galleryManager: GalleryManager
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject private var previewStore = PreviewStore.shared
-    @ObservedObject private var activeStore: ImageStore = ImageStore.shared
+    @State private var activeStoreRef: ImageStore = ImageStore.shared
+    @State private var refreshToken: Int = 0
     @State private var isTargeted = false
     @State private var errorToShow: ImageLoadError?
     @State private var zoomPercent: Int = 100
@@ -14,9 +15,10 @@ struct ContentView: View {
     private var store: ImageStore { galleryManager.activeStore }
     var displayItem: ImageItem? {
         if galleryManager.selectedTab == 0 {
-            previewStore.previewItem
+            return previewStore.previewItem
         } else {
-            activeStore.getSelectedImage()
+            _ = refreshToken
+            return activeStoreRef.getSelectedImage()
         }
     }
 
@@ -65,7 +67,7 @@ struct ContentView: View {
         .background(arrowKeyButtons)
         .onAppear {
             if galleryManager.selectedTab > 0, galleryManager.selectedTab - 1 < galleryManager.galleries.count {
-                activeStore = galleryManager.galleries[galleryManager.selectedTab - 1]
+                activeStoreRef = galleryManager.galleries[galleryManager.selectedTab - 1]
             }
             _ = AnimationPanelController.shared
             if PreferencesStore.shared.showPaveOnStartup {
@@ -79,8 +81,11 @@ struct ContentView: View {
         .onChange(of: galleryManager.selectedTab) { newTab in
             if newTab != 0 {
                 PreviewStore.shared.clearPreview()
-                activeStore = galleryManager.galleries[newTab - 1]
+                activeStoreRef = galleryManager.galleries[newTab - 1]
             }
+        }
+        .onReceive(activeStoreRef.objectWillChange) { _ in
+            refreshToken &+= 1
         }
         // Permanently record the stable path of the image being displayed
         .onChange(of: displayItem?.filePath) { newPath in
@@ -190,13 +195,40 @@ struct ContentView: View {
 
     private func setupTabKeyMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == 48 else { return event }
             if let textView = NSApp.keyWindow?.firstResponder as? NSTextView, textView.isEditable {
                 return event
             }
-            let maxTab = galleryManager.galleries.count
-            galleryManager.selectedTab = galleryManager.selectedTab >= maxTab ? 0 : galleryManager.selectedTab + 1
-            return nil
+
+            if event.keyCode == 48 { // Tab
+                let maxTab = galleryManager.galleries.count
+                galleryManager.selectedTab = galleryManager.selectedTab >= maxTab ? 0 : galleryManager.selectedTab + 1
+                return nil
+            }
+
+            if event.keyCode == 123 { // Left → previous tab
+                let maxTab = galleryManager.galleries.count
+                galleryManager.selectedTab = galleryManager.selectedTab <= 0 ? maxTab : galleryManager.selectedTab - 1
+                return nil
+            }
+
+            if event.keyCode == 124 { // Right → next tab
+                let maxTab = galleryManager.galleries.count
+                galleryManager.selectedTab = galleryManager.selectedTab >= maxTab ? 0 : galleryManager.selectedTab + 1
+                return nil
+            }
+
+            if galleryManager.selectedTab > 0 {
+                if event.keyCode == 126 { // Up
+                    navigateToPrevious()
+                    return nil
+                }
+                if event.keyCode == 125 { // Down
+                    navigateToNext()
+                    return nil
+                }
+            }
+
+            return event
         }
     }
 
@@ -216,16 +248,21 @@ struct ContentView: View {
     @ViewBuilder
     private var arrowKeyButtons: some View {
         HStack(spacing: 0) {
-            Button("") { navigateToPrevious() }.keyboardShortcut(.leftArrow, modifiers: []).opacity(0)
-            Button("") { navigateToNext() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
-            Button("") { navigateToPrevious() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
-            Button("") { navigateToNext() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
             Button("") { PavePanelController.shared.toggle() }.keyboardShortcut("p", modifiers: []).opacity(0)
             Button("") { AnimationPanelController.shared.toggle() }.keyboardShortcut("a", modifiers: []).opacity(0)
             Button("") { ConvertPanelController().showWindow(nil) }.keyboardShortcut("q", modifiers: []).opacity(0)
             Button("") { settings.fixedSelectionEnabled.toggle() }.keyboardShortcut("f", modifiers: []).opacity(0)
             Button("") { settings.showGrid.toggle() }.keyboardShortcut("g", modifiers: []).opacity(0)
             Button("") { settings.snapToGrid.toggle() }.keyboardShortcut("g", modifiers: [.shift]).opacity(0)
+            // Tab switching via Left/Right arrows
+            Button("") { 
+                let maxTab = galleryManager.galleries.count
+                galleryManager.selectedTab = galleryManager.selectedTab <= 0 ? maxTab : galleryManager.selectedTab - 1
+            }.keyboardShortcut(.leftArrow, modifiers: []).opacity(0)
+            Button("") { 
+                let maxTab = galleryManager.galleries.count
+                galleryManager.selectedTab = galleryManager.selectedTab >= maxTab ? 0 : galleryManager.selectedTab + 1
+            }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -234,21 +271,16 @@ struct ContentView: View {
         guard let current = store.selectedImageId,
               let index = store.images.firstIndex(where: { $0.id == current }), index > 0 else { return }
         store.selectedImageId = store.images[index - 1].id
+        PreviewStore.shared.clearPreview()
     }
 
     private func navigateToNext() {
         guard let current = store.selectedImageId,
               let index = store.images.firstIndex(where: { $0.id == current }), index < store.images.count - 1 else { return }
         store.selectedImageId = store.images[index + 1].id
+        PreviewStore.shared.clearPreview()
     }
 
-    private func zoomIn() {
-        NotificationCenter.default.post(name: .zoomIn, object: nil)
-    }
-
-    private func zoomOut() {
-        NotificationCenter.default.post(name: .zoomOut, object: nil)
-    }
 
     @ViewBuilder
     private var toolbarView: some View {
