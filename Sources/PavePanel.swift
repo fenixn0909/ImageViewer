@@ -281,6 +281,12 @@ struct PaveContentView: View {
     @State private var canvasZoom: CGFloat = 1
     @State private var zoomBase: CGFloat = 1
     @State private var floatingFollowsMouse = false
+    @State private var stampPattern: NSImage?
+    @State private var stampCenter: CGPoint = .zero
+    @State private var stampLibrary: [NSImage] = []
+    @State private var librarySelectedIndex: Int? = nil
+    @State private var stampUndoStack: [[NSImage]] = []
+    @State private var stampRedoStack: [[NSImage]] = []
     let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
     private var board: BoardData { boards[selectedTab] }
@@ -298,6 +304,10 @@ struct PaveContentView: View {
                     .layoutPriority(1)
                 layersSidebar
                     .frame(minWidth: 140, maxWidth: 220)
+            }
+
+            if !stampLibrary.isEmpty {
+                stampPickerBar
             }
 
             Divider()
@@ -364,56 +374,62 @@ struct PaveContentView: View {
     // MARK: - Settings Bar
 
     private var settingsBar: some View {
-        HStack(spacing: 8) {
-            Toggle("Grid", isOn: Binding(
-                get: { boards[selectedTab].showGrid },
-                set: { boards[selectedTab].showGrid = $0 }
-            )).toggleStyle(.checkbox).font(.caption).help("Show/hide grid")
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Toggle("Grid", isOn: Binding(
+                    get: { boards[selectedTab].showGrid },
+                    set: { boards[selectedTab].showGrid = $0 }
+                )).toggleStyle(.checkbox).font(.caption).help("Show/hide grid")
 
-            Text("W:").foregroundColor(.secondary).font(.caption)
-            TextField("px", value: Binding(
-                get: { boards[selectedTab].gridWidth },
-                set: { boards[selectedTab].gridWidth = max(1, $0) }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50).help("Grid cell width")
-            Text("H:").foregroundColor(.secondary).font(.caption)
-            TextField("px", value: Binding(
-                get: { boards[selectedTab].gridHeight },
-                set: { boards[selectedTab].gridHeight = max(1, $0) }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50).help("Grid cell height")
+                Text("W:").foregroundColor(.secondary).font(.caption)
+                TextField("px", value: Binding(
+                    get: { boards[selectedTab].gridWidth },
+                    set: { boards[selectedTab].gridWidth = max(1, $0) }
+                ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50).help("Grid cell width")
+                Text("H:").foregroundColor(.secondary).font(.caption)
+                TextField("px", value: Binding(
+                    get: { boards[selectedTab].gridHeight },
+                    set: { boards[selectedTab].gridHeight = max(1, $0) }
+                ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 50).help("Grid cell height")
 
-            ColorPicker("", selection: Binding(
-                get: { boards[selectedTab].gridStrokeColor },
-                set: { boards[selectedTab].gridStrokeColor = $0 }
-            )).labelsHidden().frame(width: 16, height: 16).help("Grid stroke color")
-            TextField("pt", value: Binding(
-                get: { boards[selectedTab].gridStrokeWidth },
-                set: { boards[selectedTab].gridStrokeWidth = max(0.1, $0) }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 40).help("Grid stroke width")
+                ColorPicker("", selection: Binding(
+                    get: { boards[selectedTab].gridStrokeColor },
+                    set: { boards[selectedTab].gridStrokeColor = $0 }
+                )).labelsHidden().frame(width: 16, height: 16).help("Grid stroke color")
+                TextField("pt", value: Binding(
+                    get: { boards[selectedTab].gridStrokeWidth },
+                    set: { boards[selectedTab].gridStrokeWidth = max(0.1, $0) }
+                ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 40).help("Grid stroke width")
 
-            Toggle("Snap", isOn: Binding(
-                get: { boards[selectedTab].snapToGrid },
-                set: { boards[selectedTab].snapToGrid = $0 }
-            )).toggleStyle(.checkbox).font(.caption).help("Snap pasted image center to nearest grid cell center")
+                Spacer()
+                Button("Clear") { clearBoard() }.help("Clear selected layer")
+            }
 
-            Divider().frame(height: 16)
+            HStack(spacing: 8) {
+                Toggle("Snap", isOn: Binding(
+                    get: { boards[selectedTab].snapToGrid },
+                    set: { boards[selectedTab].snapToGrid = $0 }
+                )).toggleStyle(.checkbox).font(.caption).help("Snap pasted image center to nearest grid cell center")
 
-            Text("Size").font(.caption).foregroundColor(.secondary)
-            Text("W:").foregroundColor(.secondary).font(.caption)
-            TextField("px", value: Binding(
-                get: { boards[selectedTab].canvasWidth },
-                set: { boards[selectedTab].canvasWidth = $0 }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60).help("Canvas width")
-            Text("H:").foregroundColor(.secondary).font(.caption)
-            TextField("px", value: Binding(
-                get: { boards[selectedTab].canvasHeight },
-                set: { boards[selectedTab].canvasHeight = $0 }
-            ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60).help("Canvas height")
-            ColorPicker("", selection: Binding(
-                get: { prefs.checkerColor2 },
-                set: { prefs.checkerColor2 = $0 }
-            )).labelsHidden().frame(width: 16, height: 16).help("Checker dark color")
-            Spacer()
-            Button("Clear") { clearBoard() }.help("Clear selected layer")
+                Divider().frame(height: 16)
+
+                Text("Size").font(.caption).foregroundColor(.secondary)
+                Text("W:").foregroundColor(.secondary).font(.caption)
+                TextField("px", value: Binding(
+                    get: { boards[selectedTab].canvasWidth },
+                    set: { boards[selectedTab].canvasWidth = $0 }
+                ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60).help("Canvas width")
+                Text("H:").foregroundColor(.secondary).font(.caption)
+                TextField("px", value: Binding(
+                    get: { boards[selectedTab].canvasHeight },
+                    set: { boards[selectedTab].canvasHeight = $0 }
+                ), formatter: NumberFormatter()).textFieldStyle(.roundedBorder).frame(width: 60).help("Canvas height")
+                ColorPicker("", selection: Binding(
+                    get: { prefs.checkerColor2 },
+                    set: { prefs.checkerColor2 = $0 }
+                )).labelsHidden().frame(width: 16, height: 16).help("Checker dark color")
+                Spacer()
+            }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
     }
@@ -479,12 +495,29 @@ struct PaveContentView: View {
                                 .position(x: fx + fw / 2, y: fy + fh / 2)
                         }
 
+                        if let stamp = stampPattern {
+                            let sw = stamp.size.width * displayScale
+                            let sh = stamp.size.height * displayScale
+                            let sx = stampCenter.x * displayScale
+                            let sy = stampCenter.y * displayScale
+                            Image(nsImage: stamp).resizable().interpolation(.none)
+                                .frame(width: sw, height: sh)
+                                .position(x: sx, y: sy)
+                                .opacity(0.5)
+                            Rectangle()
+                                .strokeBorder(style: StrokeStyle(lineWidth: 2.5, dash: [6], dashPhase: dashPhase))
+                                .foregroundColor(.blue)
+                                .frame(width: sw, height: sh)
+                                .position(x: sx, y: sy)
+                        }
+
                         RightClickCatcher { pt in selectGridCell(at: pt, viewHeight: drawH, displayScale: displayScale) }
                             .frame(width: drawW, height: drawH)
                     }
                     .frame(width: drawW, height: drawH)
                     .background(GeometryReader { proxy in
                         Color.clear.onAppear { canvasViewSize = proxy.size }
+                            .onChange(of: proxy.size) { canvasViewSize = $0 }
                     })
                     .onContinuousHover { phase in
                         if case .active(let pt) = phase {
@@ -496,6 +529,18 @@ struct PaveContentView: View {
                                     origin = snappedOrigin(forRawOrigin: origin, imgSize: img.size, gridW: boards[selectedTab].gridWidth, gridH: boards[selectedTab].gridHeight)
                                 }
                                 boards[selectedTab].floatingOrigin = origin
+                            }
+                            if stampPattern != nil {
+                                var sc = CGPoint(x: pt.x / displayScale, y: pt.y / displayScale)
+                                if boards[selectedTab].snapToGrid {
+                                    let gw = boards[selectedTab].gridWidth
+                                    let gh = boards[selectedTab].gridHeight
+                                    if gw > 0, gh > 0 {
+                                        sc.x = (floor(sc.x / gw) + 0.5) * gw
+                                        sc.y = (floor(sc.y / gh) + 0.5) * gh
+                                    }
+                                }
+                                stampCenter = sc
                             }
                         }
                     }
@@ -556,16 +601,15 @@ struct PaveContentView: View {
         let extracted = NSImage(size: NSSize(width: gw, height: gh))
         extracted.lockFocus()
         canvas.draw(at: NSPoint(x: -gx, y: -(canvas.size.height - gy - gh)),
-                    from: .zero, operation: .sourceOver, fraction: 1)
+                    from: NSRect.zero, operation: NSCompositingOperation.sourceOver, fraction: 1)
         extracted.unlockFocus()
 
-        let mouseCanvas = CGPoint(x: lastMouseCanvas.x / displayScale, y: lastMouseCanvas.y / displayScale)
-
-        boards[selectedTab].floatingImage = extracted
-        boards[selectedTab].floatingOrigin = CGPoint(x: mouseCanvas.x - gw / 2, y: mouseCanvas.y - gh / 2)
+        stampPattern = extracted
+        stampCenter = CGPoint(x: gx + gw / 2, y: gy + gh / 2)
+        boards[selectedTab].floatingImage = nil
+        boards[selectedTab].showFloating = false
         boards[selectedTab].dragOffset = .zero
-        boards[selectedTab].showFloating = true
-        floatingFollowsMouse = true
+        floatingFollowsMouse = false
     }
 
     // MARK: - Canvas Gestures
@@ -573,13 +617,16 @@ struct PaveContentView: View {
     private func canvasDragGesture(scale: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { val in
+                if stampPattern != nil { return }
                 if boards[selectedTab].isSelecting || (NSEvent.modifierFlags == [] && !boards[selectedTab].showFloating) {
                     if !boards[selectedTab].isSelecting {
-                        boards[selectedTab].selectionStart = CGPoint(x: val.startLocation.x / scale, y: val.startLocation.y / scale)
+                        let raw = CGPoint(x: val.startLocation.x / scale, y: val.startLocation.y / scale)
+                        boards[selectedTab].selectionStart = boards[selectedTab].snapToGrid ? snapPoint(raw) : raw
                     }
                     let b = boards[selectedTab]
                     let start = b.selectionStart
-                    let cur = CGPoint(x: val.location.x / scale, y: val.location.y / scale)
+                    let rawCur = CGPoint(x: val.location.x / scale, y: val.location.y / scale)
+                    let cur = b.snapToGrid ? snapPoint(rawCur) : rawCur
                     let rect = CGRect(x: min(start.x, cur.x), y: min(start.y, cur.y),
                                       width: abs(cur.x - start.x), height: abs(cur.y - start.y))
                     boards[selectedTab].selectionRect = rect
@@ -616,6 +663,13 @@ struct PaveContentView: View {
     }
 
     /// Given a proposed top-left origin (canvas coordinates, unscaled) for an image of `imgSize`,
+    private func snapPoint(_ p: CGPoint) -> CGPoint {
+        let b = boards[selectedTab]
+        guard b.gridWidth > 0, b.gridHeight > 0 else { return p }
+        return CGPoint(x: round(p.x / b.gridWidth) * b.gridWidth,
+                       y: round(p.y / b.gridHeight) * b.gridHeight)
+    }
+
     /// returns the origin adjusted so the image's *center* lands on the center of the nearest grid cell.
     private func snappedOrigin(forRawOrigin origin: CGPoint, imgSize: NSSize, gridW: CGFloat, gridH: CGFloat) -> CGPoint {
         guard gridW > 0, gridH > 0 else { return origin }
@@ -626,9 +680,89 @@ struct PaveContentView: View {
         return CGPoint(x: snappedCenterX - imgSize.width / 2, y: snappedCenterY - imgSize.height / 2)
     }
 
+    private func stampAtCenter() {
+        guard let pattern = stampPattern,
+              let idx = boards[selectedTab].selectedLayerIndex else { return }
+        pushUndo()
+        let b = boards[selectedTab]
+        let cw = b.canvasWidth
+        let ch = b.canvasHeight
+        var cx = stampCenter.x
+        var cy = stampCenter.y
+        if b.snapToGrid {
+            let snapped = snappedOrigin(forRawOrigin: CGPoint(x: cx - pattern.size.width / 2, y: cy - pattern.size.height / 2),
+                                        imgSize: pattern.size, gridW: b.gridWidth, gridH: b.gridHeight)
+            cx = snapped.x + pattern.size.width / 2
+            cy = snapped.y + pattern.size.height / 2
+        }
+        let canvasSize = NSSize(width: cw, height: ch)
+        let existing = boards[selectedTab].layers[idx].canvasImage
+        let rep = NSImage(size: canvasSize)
+        rep.lockFocus()
+        existing?.draw(at: NSPoint.zero, from: NSRect.zero, operation: NSCompositingOperation.sourceOver, fraction: 1)
+        let drawPos = NSPoint(x: cx - pattern.size.width / 2,
+                               y: ch - cy - pattern.size.height / 2)
+        pattern.draw(at: drawPos, from: NSRect.zero, operation: NSCompositingOperation.copy, fraction: 1)
+        rep.unlockFocus()
+        boards[selectedTab].layers[idx].canvasImage = rep
+    }
+
     private func boardTapped() {
+        let cw = max(1, boards[selectedTab].canvasWidth)
+        let ch = max(1, boards[selectedTab].canvasHeight)
+        let ds = canvasViewSize.width / cw
+        let dh = ch * ds
+
+        if NSEvent.modifierFlags.contains(.command) {
+            addGridCellToLibrary(displayScale: ds, drawH: dh)
+            return
+        }
+        if stampPattern != nil {
+            stampAtCenter()
+            return
+        }
         if boards[selectedTab].selectionRect != nil {
             boards[selectedTab].selectionRect = nil
+        }
+    }
+
+    private func addGridCellToLibrary(displayScale: CGFloat, drawH: CGFloat) {
+        guard displayScale > 0, drawH > 0 else { return }
+        let b = boards[selectedTab]
+        let gw = b.gridWidth
+        let gh = b.gridHeight
+        guard gw > 0, gh > 0 else { return }
+        let cx = lastMouseCanvas.x / displayScale
+        let cy = (drawH - lastMouseCanvas.y) / displayScale
+        let gx = floor(cx / gw) * gw
+        let gy = floor(cy / gh) * gh
+
+        guard let layerIdx = b.selectedLayerIndex,
+              let canvas = b.layers[layerIdx].canvasImage else { return }
+        let extracted = NSImage(size: NSSize(width: gw, height: gh))
+        extracted.lockFocus()
+        canvas.draw(at: NSPoint(x: -gx, y: -(canvas.size.height - gy - gh)),
+                    from: NSRect.zero, operation: .sourceOver, fraction: 1)
+        extracted.unlockFocus()
+
+        let data = extracted.tiffRepresentation
+        if stampLibrary.contains(where: { $0.tiffRepresentation == data }) { return }
+        pushStampUndo()
+        stampLibrary.append(extracted)
+        librarySelectedIndex = stampLibrary.count - 1
+    }
+
+    private func deleteSelectedStamp() {
+        guard let idx = librarySelectedIndex, idx < stampLibrary.count else { return }
+        pushStampUndo()
+        stampLibrary.remove(at: idx)
+        if stampLibrary.isEmpty {
+            stampPattern = nil
+            librarySelectedIndex = nil
+        } else if idx >= stampLibrary.count {
+            librarySelectedIndex = stampLibrary.count - 1
+        } else {
+            librarySelectedIndex = idx
         }
     }
 
@@ -648,6 +782,7 @@ struct PaveContentView: View {
                           y: CGFloat(b.canvasHeight) - (b.floatingOrigin.y + b.dragOffset.height / scale) - img.size.height)
         img.draw(at: pos, from: .zero, operation: .sourceOver, fraction: 1)
         rep.unlockFocus()
+        stampPattern = nil
         boards[selectedTab].layers[layerIdx].canvasImage = rep
         boards[selectedTab].floatingImage = nil
         boards[selectedTab].showFloating = false
@@ -666,10 +801,12 @@ struct PaveContentView: View {
             Button("") { undo() }.keyboardShortcut("z", modifiers: .command).opacity(0)
             Button("") { redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).opacity(0)
             Button("") { rotateFloatingCW() }.keyboardShortcut("r", modifiers: .command).opacity(0)
-            Button("") { rotateFloatingCCW() }.keyboardShortcut("r", modifiers: [.command, .shift]).opacity(0)
+            Button("") { exportSelection() }.keyboardShortcut("r", modifiers: [.command, .shift]).opacity(0)
             Button("") { flipFloatingH() }.keyboardShortcut("f", modifiers: .command).opacity(0)
             Button("") { flipFloatingV() }.keyboardShortcut("f", modifiers: [.command, .shift]).opacity(0)
             Button("") { boards[selectedTab].showGrid.toggle() }.keyboardShortcut("g", modifiers: .command).opacity(0)
+            Button("") { exportBoard() }.keyboardShortcut("e", modifiers: [.command, .shift]).opacity(0)
+            Button("") { deleteSelectedStamp() }.keyboardShortcut(.delete, modifiers: []).opacity(0)
         }
         .frame(width: 0, height: 0)
     }
@@ -685,6 +822,7 @@ struct PaveContentView: View {
         if b.snapToGrid {
             origin = snappedOrigin(forRawOrigin: origin, imgSize: image.size, gridW: b.gridWidth, gridH: b.gridHeight)
         }
+        stampPattern = nil
         boards[selectedTab].floatingImage = image
         boards[selectedTab].floatingOrigin = origin
         boards[selectedTab].dragOffset = .zero
@@ -696,6 +834,7 @@ struct PaveContentView: View {
     private func commitFloating() { commitFloating(scale: 1) }
 
     private func cancelFloating() {
+        stampPattern = nil
         floatingFollowsMouse = false
         boards[selectedTab].floatingImage = nil
         boards[selectedTab].showFloating = false
@@ -763,6 +902,56 @@ struct PaveContentView: View {
     }
 
     private func clearSelection() { boards[selectedTab].selectionRect = nil }
+
+    private func exportSelection() {
+        guard let sr = boards[selectedTab].selectionRect else { return }
+        let b = boards[selectedTab]
+        saveImagePanel(title: "Export Selection") { url in
+            let exportImg = NSImage(size: NSSize(width: sr.width, height: sr.height))
+            exportImg.lockFocus()
+            for layer in b.layers where layer.isVisible {
+                if let img = layer.canvasImage {
+                    img.draw(at: NSPoint(x: -sr.origin.x, y: -(img.size.height - sr.origin.y - sr.height)),
+                             from: NSRect.zero, operation: NSCompositingOperation.sourceOver, fraction: 1)
+                }
+            }
+            exportImg.unlockFocus()
+            self.writePNG(exportImg, to: url)
+        }
+    }
+
+    private func exportBoard() {
+        let b = boards[selectedTab]
+        let canvasSize = NSSize(width: b.canvasWidth, height: b.canvasHeight)
+        saveImagePanel(title: "Export Board") { url in
+            let exportImg = NSImage(size: canvasSize)
+            exportImg.lockFocus()
+            for layer in b.layers where layer.isVisible {
+                if let img = layer.canvasImage {
+                    img.draw(at: NSPoint.zero, from: NSRect.zero, operation: NSCompositingOperation.sourceOver, fraction: 1)
+                }
+            }
+            exportImg.unlockFocus()
+            self.writePNG(exportImg, to: url)
+        }
+    }
+
+    private func saveImagePanel(title: String, callback: @escaping (URL) -> Void) {
+        let panel = NSSavePanel()
+        panel.title = title
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "Untitled.png"
+        panel.begin { resp in
+            if resp == .OK, let url = panel.url { callback(url) }
+        }
+    }
+
+    private func writePNG(_ image: NSImage, to url: URL) {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: url)
+    }
 
     // MARK: - Board Actions
 
@@ -927,13 +1116,71 @@ struct PaveContentView: View {
         .padding(.horizontal, 8).padding(.vertical, 4)
     }
 
+    private var stampPickerBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 6) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(stampLibrary.indices, id: \.self) { i in
+                            Image(nsImage: stampLibrary[i])
+                                .resizable().interpolation(.none)
+                                .frame(width: 40, height: 40)
+                                .border(librarySelectedIndex == i ? Color.blue : Color.clear, width: 2)
+                                .onTapGesture {
+                                    librarySelectedIndex = i
+                                    stampPattern = stampLibrary[i]
+                                    stampCenter = CGPoint(x: boards[selectedTab].canvasWidth / 2,
+                                                          y: boards[selectedTab].canvasHeight / 2)
+                                    boards[selectedTab].floatingImage = nil
+                                    boards[selectedTab].showFloating = false
+                                    boards[selectedTab].dragOffset = .zero
+                                    floatingFollowsMouse = false
+                                }
+                        }
+                    }
+                    .padding(4)
+                }
+                .frame(height: 48)
+
+                Button {
+                    pushStampUndo()
+                    stampLibrary.removeAll()
+                    librarySelectedIndex = nil
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain).padding(4).help("Clear all stamps")
+            }
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Color(nsColor: .controlBackgroundColor))
+        }
+    }
+
+    private func pushStampUndo() {
+        stampUndoStack.append(stampLibrary)
+        stampRedoStack.removeAll()
+        if stampUndoStack.count > 50 { stampUndoStack.removeFirst() }
+    }
+
     private func undo() {
+        if !stampUndoStack.isEmpty {
+            stampRedoStack.append(stampLibrary)
+            stampLibrary = stampUndoStack.removeLast()
+            return
+        }
         guard !boards[selectedTab].undoStack.isEmpty else { return }
         boards[selectedTab].redoStack.append(boards[selectedTab].layers)
         boards[selectedTab].layers = boards[selectedTab].undoStack.removeLast()
     }
 
     private func redo() {
+        if !stampRedoStack.isEmpty {
+            stampUndoStack.append(stampLibrary)
+            stampLibrary = stampRedoStack.removeLast()
+            librarySelectedIndex = stampLibrary.isEmpty ? nil : stampLibrary.count - 1
+            return
+        }
         guard !boards[selectedTab].redoStack.isEmpty else { return }
         boards[selectedTab].undoStack.append(boards[selectedTab].layers)
         boards[selectedTab].layers = boards[selectedTab].redoStack.removeLast()

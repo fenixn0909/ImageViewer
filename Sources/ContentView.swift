@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var galleryManager: GalleryManager
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject private var previewStore = PreviewStore.shared
+    @ObservedObject private var activeStore: ImageStore = ImageStore.shared
     @State private var isTargeted = false
     @State private var errorToShow: ImageLoadError?
     @State private var zoomPercent: Int = 100
@@ -15,7 +16,7 @@ struct ContentView: View {
         if galleryManager.selectedTab == 0 {
             previewStore.previewItem
         } else {
-            galleryManager.galleries[galleryManager.selectedTab - 1].getSelectedImage()
+            activeStore.getSelectedImage()
         }
     }
 
@@ -63,6 +64,9 @@ struct ContentView: View {
         }
         .background(arrowKeyButtons)
         .onAppear {
+            if galleryManager.selectedTab > 0, galleryManager.selectedTab - 1 < galleryManager.galleries.count {
+                activeStore = galleryManager.galleries[galleryManager.selectedTab - 1]
+            }
             _ = AnimationPanelController.shared
             if PreferencesStore.shared.showPaveOnStartup {
                 PavePanelController.shared.window?.makeKeyAndOrderFront(nil)
@@ -73,7 +77,10 @@ struct ContentView: View {
             triggerAutomaticStartupClick()
         }
         .onChange(of: galleryManager.selectedTab) { newTab in
-            if newTab != 0 { PreviewStore.shared.clearPreview() }
+            if newTab != 0 {
+                PreviewStore.shared.clearPreview()
+                activeStore = galleryManager.galleries[newTab - 1]
+            }
         }
         // Permanently record the stable path of the image being displayed
         .onChange(of: displayItem?.filePath) { newPath in
@@ -211,8 +218,8 @@ struct ContentView: View {
         HStack(spacing: 0) {
             Button("") { navigateToPrevious() }.keyboardShortcut(.leftArrow, modifiers: []).opacity(0)
             Button("") { navigateToNext() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
-            Button("") { zoomIn() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
-            Button("") { zoomOut() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
+            Button("") { navigateToPrevious() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
+            Button("") { navigateToNext() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
             Button("") { PavePanelController.shared.toggle() }.keyboardShortcut("p", modifiers: []).opacity(0)
             Button("") { AnimationPanelController.shared.toggle() }.keyboardShortcut("a", modifiers: []).opacity(0)
             Button("") { ConvertPanelController().showWindow(nil) }.keyboardShortcut("q", modifiers: []).opacity(0)
