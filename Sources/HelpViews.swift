@@ -45,8 +45,7 @@ struct ShortcutsView: View {
                     row("Cmd+,", "Preferences")
                 }
                 section("Image Preview") {
-                    row("← / →", "Previous / next image")
-                    row("↑ / ↓", "Zoom in / out")
+                    row("↑ / ↓", "Previous / next image (in gallery tabs)")
                     row("F", "Toggle fixed-size selection")
                     row("G", "Toggle grid overlay")
                     row("S", "Add sprite from selection to sequence")
@@ -62,7 +61,6 @@ struct ShortcutsView: View {
                 section("Animation / Sequence") {
                     row("Enter / Space", "Play / pause")
                     row("← / →", "Previous / next frame")
-                    row("↑ / ↓", "Previous / next sequence")
                     row("J / L", "Nudge offset left / right (1px)")
                     row("I / K", "Nudge offset up / down (1px)")
                     row("Shift+J/K/L/I", "Nudge by 10px")
@@ -89,12 +87,14 @@ struct ShortcutsView: View {
                     row("Cmd+Shift+F", "Flip floating image vertically")
                     row("Cmd+G", "Toggle grid overlay")
                     row("Cmd+C", "Copy selection area to clipboard")
+                    row("Cmd+E", "Export selection area as PNG")
                     row("Cmd+D", "Clear selection")
                     row("Cmd+Z", "Undo")
                     row("Cmd+Shift+Z", "Redo")
                 }
                 section("Tab Navigation") {
                     row("Tab", "Cycle through tabs")
+                    row("← / →", "Previous / next tab")
                 }
             }
             .padding(20)
@@ -166,7 +166,7 @@ struct FeaturesView: View {
                     item("Right-click → Add To Gallery context menu.")
                 }
                 section("Image Preview") {
-                    item("Full-resolution display with scroll/pan and zoom (↑/↓, pinch).")
+                    item("Full-resolution display with scroll/pan and zoom (pinch).")
                     item("Drag-to-select with resizable selection rectangle.")
                     item("Fixed-size selection: enable in toolbar, enter W×H, click to place.")
                     item("Grid overlay with configurable color, stroke, cell size, and offset.")

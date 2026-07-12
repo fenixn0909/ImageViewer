@@ -121,14 +121,6 @@ struct ImagePreview: View {
                 selectionRect = CGRect(x: x, y: y, width: clampedWidth, height: clampedHeight)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomIn)) { _ in
-            zoomLevel = max(0.1, min(50, zoomLevel * 1.05))
-            lastZoomLevel = zoomLevel
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .zoomOut)) { _ in
-            zoomLevel = max(0.1, min(50, zoomLevel / 1.05))
-            lastZoomLevel = zoomLevel
-        }
     }
 
     struct GridView: View {
@@ -324,7 +316,10 @@ struct ImagePreview: View {
 
         let sX = CGFloat(cgImage.width) / item.image.size.width
         let sY = CGFloat(cgImage.height) / item.image.size.height
-        let pixelRect = CGRect(x: Int(rect.origin.x * sX), y: Int(rect.origin.y * sY),
+        // `rect` is top-down (y = 0 at top), matching the on-screen selection, but
+        // CGImage.cropping(to:) is bottom-left-origin, so flip before scaling to pixels.
+        let flippedY = item.image.size.height - rect.origin.y - rect.height
+        let pixelRect = CGRect(x: Int(rect.origin.x * sX), y: Int(flippedY * sY),
                                width: Int(rect.width * sX), height: Int(rect.height * sY))
 
         guard let cropped = cgImage.cropping(to: pixelRect) else { return }
@@ -343,7 +338,9 @@ struct ImagePreview: View {
 
         let sX = CGFloat(cgImage.width) / item.image.size.width
         let sY = CGFloat(cgImage.height) / item.image.size.height
-        let pixelRect = CGRect(x: Int(rect.origin.x * sX), y: Int(rect.origin.y * sY),
+        // Same top-down → bottom-left-origin flip as copySelection(); see note there.
+        let flippedY = item.image.size.height - rect.origin.y - rect.height
+        let pixelRect = CGRect(x: Int(rect.origin.x * sX), y: Int(flippedY * sY),
                                width: Int(rect.width * sX), height: Int(rect.height * sY))
 
         guard var cropped = cgImage.cropping(to: pixelRect) else { return }

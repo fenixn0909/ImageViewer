@@ -442,6 +442,8 @@ struct AnimationContentView: View {
         HStack(spacing: 0) {
             Button("") { defocusAll(); previousFrame() }.keyboardShortcut(.leftArrow, modifiers: []).opacity(0)
             Button("") { defocusAll(); nextFrame() }.keyboardShortcut(.rightArrow, modifiers: []).opacity(0)
+            Button("") { selectPreviousSequence() }.keyboardShortcut(.upArrow, modifiers: []).opacity(0)
+            Button("") { selectNextSequence() }.keyboardShortcut(.downArrow, modifiers: []).opacity(0)
             Button("") { defocusAll(); nudgeOffset(dx: -1, dy: 0, step: 1) }.keyboardShortcut("j", modifiers: []).opacity(0)
             Button("") { defocusAll(); nudgeOffset(dx: 1, dy: 0, step: 1) }.keyboardShortcut("l", modifiers: []).opacity(0)
             Button("") { defocusAll(); nudgeOffset(dx: 0, dy: -1, step: 1) }.keyboardShortcut("i", modifiers: []).opacity(0)
@@ -466,25 +468,25 @@ struct AnimationContentView: View {
         selectedFrameIndex = (selectedFrameIndex + 1) % _seq.frames.count
     }
 
-    private func previousAnimation() {
+    private func selectPreviousSequence() {
         guard !seqStore.sequences.isEmpty else { return }
-        saveBgColor()
-        let ids = seqStore.sequences.map(\.id)
-        if let current = seqStore.selectedSequenceId, let idx = ids.firstIndex(of: current) {
-            seqStore.selectedSequenceId = ids[(idx - 1 + ids.count) % ids.count]
-        } else {
-            seqStore.selectedSequenceId = ids[0]
+        if seqStore.selectedSequenceId == nil {
+            seqStore.selectedSequenceId = seqStore.sequences.last?.id
+        } else if let current = seqStore.selectedSequenceId,
+                  let idx = seqStore.sequences.firstIndex(where: { $0.id == current }),
+                  idx > 0 {
+            seqStore.selectedSequenceId = seqStore.sequences[idx - 1].id
         }
     }
 
-    private func nextAnimation() {
+    private func selectNextSequence() {
         guard !seqStore.sequences.isEmpty else { return }
-        saveBgColor()
-        let ids = seqStore.sequences.map(\.id)
-        if let current = seqStore.selectedSequenceId, let idx = ids.firstIndex(of: current) {
-            seqStore.selectedSequenceId = ids[(idx + 1) % ids.count]
-        } else {
-            seqStore.selectedSequenceId = ids[0]
+        if seqStore.selectedSequenceId == nil {
+            seqStore.selectedSequenceId = seqStore.sequences.first?.id
+        } else if let current = seqStore.selectedSequenceId,
+                  let idx = seqStore.sequences.firstIndex(where: { $0.id == current }),
+                  idx < seqStore.sequences.count - 1 {
+            seqStore.selectedSequenceId = seqStore.sequences[idx + 1].id
         }
     }
 
@@ -641,14 +643,6 @@ struct AnimPreview: View {
                         .onReceive(timer) { _ in tick(count: frames.count) }
                 }
 
-                Color.gray.opacity(0.2)
-                    .frame(height: 4)
-                    .cornerRadius(2)
-                    .overlay(Rectangle().fill(Color.clear).contentShape(Rectangle()))
-                    .gesture(DragGesture()
-                        .updating($dragOffset) { value, state, _ in state = value.translation.height }
-                        .onEnded { previewHeightDouble = Double(max(60, min(500, CGFloat(previewHeightDouble) + $0.translation.height))) })
-
                 HStack(spacing: 8) {
                     Button(action: togglePlay) {
                         Text(isPlaying ? "Stop" : "Play").font(.caption)
@@ -676,6 +670,20 @@ struct AnimPreview: View {
                     .frame(height: displayHeight)
                     .overlay(Text("No sprites").foregroundColor(.secondary).font(.caption))
             }
+
+            // Bottom-edge drag handle
+            Color.gray.opacity(0.3)
+                .frame(height: 6)
+                .cornerRadius(3)
+                .overlay(alignment: .center) {
+                    Capsule().fill(.secondary).frame(width: 40, height: 3)
+                }
+                .onHover { isHovered in
+                    if isHovered { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+                }
+                .gesture(DragGesture()
+                    .updating($dragOffset) { value, state, _ in state = value.translation.height }
+                    .onEnded { previewHeightDouble = Double(max(60, min(500, CGFloat(previewHeightDouble) + $0.translation.height))) })
         }
         .overlay(
             HStack(spacing: 0) {

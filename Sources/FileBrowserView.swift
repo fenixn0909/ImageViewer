@@ -149,7 +149,7 @@ struct FileBrowserView: View {
         let activeStore = galleryManager.activeStore
         if let existing = activeStore.getItemByPath(path) {
             activeStore.selectedImageId = existing.id
-            PreviewStore.shared.clearPreview()
+            PreviewStore.shared.setPreview(image: existing.image, path: path)
             return
         }
         Task {

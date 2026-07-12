@@ -119,6 +119,4 @@ extension Notification.Name {
     static let copySelection = Notification.Name("ImageViewer_CopySelection")
     static let applyFixedSize = Notification.Name("ImageViewer_ApplyFixedSize")
     static let clearSelection = Notification.Name("ImageViewer_ClearSelection")
-    static let zoomIn = Notification.Name("ImageViewer_ZoomIn")
-    static let zoomOut = Notification.Name("ImageViewer_ZoomOut")
 }

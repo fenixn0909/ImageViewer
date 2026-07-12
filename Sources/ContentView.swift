@@ -199,6 +199,11 @@ struct ContentView: View {
                 return event
             }
 
+            // Let AnimationWindow handle its own arrow keys
+            if let animWin = AnimationPanelController.shared.window, event.window === animWin {
+                return event
+            }
+
             if event.keyCode == 48 { // Tab
                 let maxTab = galleryManager.galleries.count
                 galleryManager.selectedTab = galleryManager.selectedTab >= maxTab ? 0 : galleryManager.selectedTab + 1

@@ -71,21 +71,6 @@ final class PavePanelController: NSWindowController {
     }
 }
 
-// MARK: - Checker Color
-
-private final class CheckerColorHandler: NSObject {
-    static let shared = CheckerColorHandler()
-    @objc func colorChanged(_ sender: NSColorPanel) {
-        let color = sender.color
-        if let srgb = color.usingColorSpace(.sRGB) {
-            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            srgb.getRed(&r, green: &g, blue: &b, alpha: &a)
-            let hex = String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
-            UserDefaults.standard.set(hex, forKey: "checkerColor")
-        }
-    }
-}
-
 // MARK: - Layer & Board Models
 
 struct BoardLayer: Identifiable {
@@ -805,14 +790,15 @@ struct PaveContentView: View {
     private var keyboardShortcuts: some View {
         HStack(spacing: 0) {
             Button("") { pasteImage() }.keyboardShortcut("v", modifiers: .command).opacity(0)
-            Button("") { commitFloating(scale: 1) }.keyboardShortcut(.return, modifiers: []).opacity(0)
+            Button("") { commitFloating(scale: currentDisplayScale()) }.keyboardShortcut(.return, modifiers: []).opacity(0)
             Button("") { cancelFloating() }.keyboardShortcut(.escape, modifiers: []).opacity(0)
             Button("") { copySelection() }.keyboardShortcut("c", modifiers: .command).opacity(0)
             Button("") { clearSelection() }.keyboardShortcut("d", modifiers: .command).opacity(0)
             Button("") { undo() }.keyboardShortcut("z", modifiers: .command).opacity(0)
             Button("") { redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).opacity(0)
             Button("") { rotateFloatingCW() }.keyboardShortcut("r", modifiers: .command).opacity(0)
-            Button("") { exportSelection() }.keyboardShortcut("r", modifiers: [.command, .shift]).opacity(0)
+            Button("") { rotateFloatingCCW() }.keyboardShortcut("r", modifiers: [.command, .shift]).opacity(0)
+            Button("") { exportSelection() }.keyboardShortcut("e", modifiers: .command).opacity(0)
             Button("") { flipFloatingH() }.keyboardShortcut("f", modifiers: .command).opacity(0)
             Button("") { flipFloatingV() }.keyboardShortcut("f", modifiers: [.command, .shift]).opacity(0)
             Button("") { boards[selectedTab].showGrid.toggle() }.keyboardShortcut("g", modifiers: .command).opacity(0)
@@ -842,7 +828,14 @@ struct PaveContentView: View {
         floatingFollowsMouse = false
     }
 
-    private func commitFloating() { commitFloating(scale: 1) }
+    /// Recovers the canvas's current on-screen display scale from the last-measured view
+    /// size, for use in contexts (like keyboard shortcuts) outside canvasArea's own
+    /// GeometryReader scope. Mirrors the scale computation in boardTapped()/pasteImage().
+    private func currentDisplayScale() -> CGFloat {
+        let cw = max(1, boards[selectedTab].canvasWidth)
+        guard canvasViewSize.width > 0 else { return 1 }
+        return canvasViewSize.width / cw
+    }
 
     private func cancelFloating() {
         stampPattern = nil

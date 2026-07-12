@@ -118,9 +118,13 @@ struct ConvertView: View {
             for col in 0..<cols {
                 let x = rect.origin.x + CGFloat(col * gw)
                 let y = rect.origin.y + CGFloat(row * gh)
+                // `rect`/ATAContext.rect is top-down (y = 0 at top), matching the on-screen
+                // selection, but CGImage.cropping(to:) is bottom-left-origin, so flip before
+                // scaling to pixels (same issue as ImagePreview's copySelection/addSprite).
+                let flippedY = image.size.height - y - CGFloat(gh)
                 let pixelRect = CGRect(
                     x: Int((x) * sX),
-                    y: Int((y) * sY),
+                    y: Int(flippedY * sY),
                     width: Int(CGFloat(gw) * sX),
                     height: Int(CGFloat(gh) * sY)
                 )
